@@ -42,7 +42,7 @@ class XTBParams:
 
     @property
     def args(self):
-        _args = [self.method, '--chrg', str(self.charge), '--uhf', str(self.uhf)]
+        _args = ['--' + self.method, '--chrg', str(self.charge), '--uhf', str(self.uhf)]
         if self.solation is not None:
             _args.extend(['--' + self.solation, self.solvent])
         return _args
@@ -587,3 +587,122 @@ def _check_saddle_2d(energies: np.ndarray, num_dim1, num_dim2) -> np.ndarray:
             """
 
     return _saddle_check_list.flatten()
+
+
+# Additional functions for geomTric Engines #
+
+
+def xtb_energy_and_gradient(atoms, coordinates, xtb_params: XTBParams, workdir: Path):
+    # initial check
+    if not CHECK_SETENV:
+        setenv(num_threads=1, memory_per_thread='500M')
+
+    if workdir.exists():
+        raise RuntimeError('Indicated XTB working directory already exists.')
+
+    workdir.mkdir()
+    prevdir = os.getcwd()
+
+    try:
+        os.chdir(str(workdir))
+        xyzutils.save_xyz_file(const.INIT_XYZ_FILE, atoms, coordinates, 'for energy and gradient')
+        command = [config.XTB_BIN, const.INIT_XYZ_FILE, '--grad']
+        command.extend(xtb_params.args)
+        with open(const.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
+            proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
+            proc.wait()
+        with open(const.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
+            if 'normal termination of xtb' not in f.read():
+                raise RuntimeError('xtb optimization failed in {:}'.format(workdir))
+        energy = _read_xtb_energy(const.XTB_ENERGY_FILE)
+        gradient = _read_xtb_gradient(const.XTB_GRADIENT_FILE, len(atoms))
+
+    except:
+        raise
+
+    else:
+        return energy, gradient
+
+    finally:
+        os.chdir(prevdir)
+        try:
+            shutil.rmtree(workdir)
+        except:
+            pass
+
+
+def xtb_hessian(atoms, coordinates, xtb_params: XTBParams, workdir: Path):
+    # initial check
+    if not CHECK_SETENV:
+        setenv(num_threads=1, memory_per_thread='500M')
+
+    if workdir.exists():
+        raise RuntimeError('Indicated XTB working directory already exists.')
+
+    workdir.mkdir()
+    prevdir = os.getcwd()
+
+    try:
+        os.chdir(str(workdir))
+        xyzutils.save_xyz_file(const.INIT_XYZ_FILE, atoms, coordinates, 'for hessian')
+        command = [config.XTB_BIN, const.INIT_XYZ_FILE, '--hess']
+        command.extend(xtb_params.args)
+        with open(const.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
+            proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
+            proc.wait()
+        with open(const.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
+            if 'normal termination of xtb' not in f.read():
+                raise RuntimeError('xtb optimization failed in {:}'.format(workdir))
+        hess = _read_xtb_hessian(const.XTB_HESSIAN_FILE, len(atoms))
+
+    except:
+        raise
+
+    else:
+        return hess
+
+    finally:
+        os.chdir(prevdir)
+        try:
+            shutil.rmtree(workdir)
+        except:
+            pass
+
+
+def _read_xtb_energy(energy_file) -> float:
+    energy_file = Path(energy_file)
+    with energy_file.open(mode='r') as f:
+        energy_data = f.readlines()
+    assert energy_data[0].strip().startswith('$energy')
+    return float(energy_data[1].strip().split()[1])
+
+
+def _read_xtb_gradient(gradient_file, num_atom: int) -> np.ndarray:
+    gradient_file = Path(gradient_file)
+    with gradient_file.open(mode='r') as f:
+        gradient_data = f.readlines()
+    assert gradient_data[0].strip().startswith('$grad')
+    gradient = []
+    for line in gradient_data[2+num_atom:2+2*num_atom]:
+        gradient.append(line.strip().split())
+
+    return np.array(gradient, dtype=const.FLOAT)
+
+
+def _read_xtb_hessian(hessian_file, num_atom: int) -> np.ndarray:
+    hessian_file = Path(hessian_file)
+    with hessian_file.open(mode='r') as f:
+        hessian_data = f.readlines()
+    assert hessian_data[0].strip().startswith('$hessian')
+
+    hess_1d = []
+    for line in hessian_data[1:]:
+        if line.strip() == '':
+            continue
+        if line.strip().startswith('$end'):
+            break
+        hess_1d.extend(line.strip().split())
+
+    assert len(hess_1d) == (num_atom * 3) ** 2
+
+    return np.array(hess_1d, dtype=const.FLOAT).reshape((3*num_atom, 3*num_atom))

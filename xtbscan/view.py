@@ -46,8 +46,10 @@ def _plot_scan_1d(csv_file: Path, annotation: bool):
     names = [str(n + 1) for n in range(len(energies))]
 
     fig = plt.figure(figsize=(config.SCAN_PLOT_1D_WIDTH, config.SCAN_PLOT_1D_HEIGHT))
-    fig.canvas.set_window_title(csv_file.name)
-
+    try:
+        fig.canvas.manager.set_window_title(csv_file.name)
+    except:
+        pass
     ax = fig.add_subplot(111)
 
     if annotation:
@@ -66,8 +68,7 @@ def _plot_scan_1d(csv_file: Path, annotation: bool):
 
     plt.tight_layout()
     plt.show()
-    plt.clf()
-    plt.close()
+
 
 
 def _plot_scan_2d(csv_file: Path, annotation: bool):
@@ -92,7 +93,10 @@ def _plot_scan_2d(csv_file: Path, annotation: bool):
     names = [str(n + 1) for n in range(len(energies))]
 
     fig = plt.figure(figsize=(config.SCAN_PLOT_2D_WIDTH, config.SCAN_PLOT_2D_HEIGHT))
-    fig.canvas.set_window_title(csv_file.name)
+    try:
+        fig.canvas.manager.set_window_title(csv_file.name)
+    except:
+        pass
     ax = fig.add_subplot(111, projection='3d')
 
     for (x, y, z, name, saddle) in zip(parameters1, parameters2, energies, names, saddle_check_list):
@@ -117,8 +121,6 @@ def _plot_scan_2d(csv_file: Path, annotation: bool):
 
     plt.tight_layout()
     plt.show()
-    plt.clf()
-    plt.close()
 
 
 def _plot_scan_concerted(csv_file: Path, annotation: bool):
@@ -137,8 +139,10 @@ def _plot_scan_concerted(csv_file: Path, annotation: bool):
     names = [str(n) for n in parameters]
 
     fig = plt.figure(figsize=(config.SCAN_PLOT_1D_WIDTH, config.SCAN_PLOT_1D_HEIGHT))
-    fig.canvas.set_window_title(csv_file.name)
-
+    try:
+        fig.canvas.manager.set_window_title(csv_file.name)
+    except:
+        pass
     ax = fig.add_subplot(111)
 
     if annotation:
@@ -157,8 +161,6 @@ def _plot_scan_concerted(csv_file: Path, annotation: bool):
 
     plt.tight_layout()
     plt.show()
-    plt.clf()
-    plt.close()
 
 
 def plot_surface(csv_file):
@@ -184,7 +186,10 @@ def plot_surface(csv_file):
                 energies.append(float(line[-2]))
 
     fig = plt.figure(figsize=(config.SCAN_PLOT_2D_WIDTH, config.SCAN_PLOT_2D_HEIGHT))
-    fig.canvas.set_window_title(csv_file.name)
+    try:
+        fig.canvas.manager.set_window_title(csv_file.name)
+    except:
+        pass
     ax = fig.add_subplot(111, projection='3d')
 
     x1 = np.array(parameters1, dtype=const.FLOAT).reshape((num_dim1, num_dim2))
@@ -204,19 +209,17 @@ def plot_surface(csv_file):
 
     plt.tight_layout()
     plt.show()
-    plt.clf()
-    plt.close()
 
 
 def view_xyz_file(xyz_file):
-    sp.Popen([config.VIEWER_PATH, xyz_file])
+    sp.Popen([config.VIEWER_PATH, str(xyz_file)])
 
 
 @utils.async_func
 def view_xyz_structure(atoms, coordinates, title=''):
     _, file = tempfile.mkstemp(suffix='.xyz', text=True)
     xyzutils.save_xyz_file(file, atoms, coordinates, title)
-    sp.run([config.VIEWER_PATH, file])
+    sp.run([config.VIEWER_PATH, str(file)])
     try:
         Path(file).unlink()
     except:
