@@ -4,6 +4,7 @@
   - [1. はじめに](#1-はじめに)
     - [1.1. 概要](#11-概要)
     - [1.2. 更新履歴](#12-更新履歴)
+      - [2024/9/6](#202496)
       - [2022/11/11](#20221111)
   - [2. 動作条件と起動](#2-動作条件と起動)
     - [2.1. 動作確認環境](#21-動作確認環境)
@@ -27,29 +28,40 @@ GrimmeのxTBを利用して、いわゆるScan (reluxed scan)をWindows上のGUI
 
 ### 1.2. 更新履歴
 
+#### 2024/9/6
+- リファクタリング + GUIデザインの変更
+- cclibを利用した読み込みを追加
+- xyzファイルをインプットとして読んだとき、最後の構造を利用するように動作を変更。
+
 #### 2022/11/11
-・とりあえず完成
+- とりあえず完成
 
 ## 2. 動作条件と起動
 
 ### 2.1. 動作確認環境
-- Windows 10
+- Windows 11
 - Python 3.8
 - wxpython 4.1.1
 - numpy 1.22.2
+- cclib 1.7.2
+- matplotlib 3.5.1
+- xtb-6.6.1 for Windows
+  
+```
+python -m pip install wxpython cclib matplotlib
+```
+で雑に動くと思います。Pythonが古いとエラーがでるかもしれません。
 
 ### 2.2. xTBの準備と設定
-https://github.com/grimme-lab/xtb の右側のreleaseからWindows用のバイナリをダウンロードして適当な場所に置きます。ここでは　`D:\programs\xtb-6.5.1` においたものとします。
+https://github.com/grimme-lab/xtb の右側のreleaseからWindows用のバイナリをダウンロードして適当な場所に置きます。ここでは　`D:\programs\xtb-6.6.1` においたものとします。
 また適当な分子構造ビューワを用意します。
 
 xtbscanフォルダの `config.py` をテキストエディタで開き、上のほうにあるいくつかのパラメータを自分の環境に合わせて書き換えます。
 
 ```
 VIEWER_PATH = 'D:/programs/jmol/jmol.bat'
-
-XTB_BIN = 'D:/programs/xtb-6.5.1/bin/xtb.exe'
-XTB_BIN_DIR = 'D:/programs/xtb-6.5.1/bin'
-XTB_PARAM_DIR = 'D:/programs/xtb-6.5.1/share/xtb'
+XTB_BIN = 'D:/programs/xtb-6.6.1/bin/xtb.exe'
+XTB_PARAM_DIR = 'D:/programs/xtb-6.6.1/share/xtb'
 ```
 
 ## 3. 使い方
@@ -60,16 +72,21 @@ XTB_PARAM_DIR = 'D:/programs/xtb-6.5.1/share/xtb'
 
 ### 3.2. 初期構造ファイルの準備と読み込み : Input XYZ
 
-- 初期構造ファイルは xyz もしくは Gaussian Job/Log ファイルが利用できます。xyzファイルの場合は、単一の構造のみが書かれたものを用意してください。Gaussian Logファイルでは、最終構造が利用されます。またGaussianファイルを読み込むと自動的に同じファイル名のxyzファイルが作成されます（同ファイル名のxyzファイルがあるとと上書きされるので注意）。
+- ファイルの読み込みはファイルをドラッグアンドドロップするか左上の ... ボタンから読み込みます。
+- 初期構造ファイルは xyz、Gaussian Job/Log ファイル、もしくはcclib [https://cclib.github.io/] で読み込めるファイルが利用できます。
+- 拡張子が gjf/com/log/out のものはGaussianファイルとして、xyz のものは xyzファイルとして処理します。それ以外はclibでそのまま読みこみます。
+- 複数構造があるファイルなどの場合はいずれも最後の構造が利用されます。
+- xyzファイル以外の場合、対応するxyzファイルが自動で作成されて初期構造ファイルとしてセットされます。
+- 複数構造があるxyzファイルの場合、name_last.xyzというファイルが自動で作成されて初期構造ファイルとしてセットされます。
+- 上記の場合、同名の古いファイルは上書きされるので注意してください。
 
-ファイルの読み込みはファイルをドラッグアンドドロップするか左上の ... ボタンから読み込みます。
 
 ### 3.3. 計算条件の設定 : XTB Settings
 
 - Methodは計算パラメータです。通常はgfn2でよいです。
 - chargeは電荷、UHFは不対電子の数で閉殻なら0、ラジカルなら1 etc.です。Gaussianとかの多重度と指定がちょっと違うので注意。
 - SolvationはALPBとGBSAがありますが、とりあえずやるならALPBでいいと思います（新しい方）。
-- Force Constantはscanやconstrainの強さです。通常は1.0のままでいいです。完全にパラメータをfixせずに、強いポテンシャルで束縛してscanします。
+- Forceはscanやconstrainの強さです。通常は1.0のままでいいです。完全にパラメータをfixせずに、強いポテンシャルで束縛してscanします。
 
 ### 3.4. Scanの設定 : Scan Conditions
 
