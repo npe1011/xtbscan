@@ -4,13 +4,13 @@ import time
 import csv
 import subprocess as sp
 from pathlib import Path
+import tempfile
+from typing import Any, List, Union, Optional
 
 import numpy as np
 
-import const
 import config
-import utils
-import xyzutils
+from xtbscan import utils, xyzutils
 
 # Global variable to check whether setenv run or not
 CHECK_SETENV = False
@@ -21,7 +21,12 @@ class XTBTerminationError(Exception):
 
 
 class XTBParams:
-    def __init__(self, method='gfn2', charge=0, uhf=0, solvation=None, solvent=''):
+    def __init__(self,
+                 method: str = 'gfn2',
+                 charge: int = 0,
+                 uhf: int = 0,
+                 solvation: Optional[str] = None,
+                 solvent: Optional[str] = None):
         # check parameters
         try:
             method = method.lower()
@@ -30,6 +35,7 @@ class XTBParams:
             if solvation is not None:
                 solvation = solvation.lower()
                 assert solvation in ['alpb', 'gbsa']
+                assert solvent is not None
                 assert len(solvent) != ''
         except AssertionError as e:
             raise ValueError('Given XTB parameters are not valid. ' + str(e.args))
@@ -37,20 +43,20 @@ class XTBParams:
         self.method = method
         self.charge = charge
         self.uhf = uhf
-        self.solation = solvation
+        self.solvation = solvation
         self.solvent = solvent
 
     @property
-    def args(self):
+    def args(self) -> List[str]:
         _args = ['--' + self.method, '--chrg', str(self.charge), '--uhf', str(self.uhf)]
-        if self.solation is not None:
-            _args.extend(['--' + self.solation, self.solvent])
+        if self.solvation is not None:
+            _args.extend(['--' + self.solvation, self.solvent])
         return _args
 
 
 class XTBConstrain:
 
-    def __init__(self, constrain_type: str, atom_indices, value=None):
+    def __init__(self, constrain_type: str, atom_indices: Union[np.ndarray, List[int]], value: Any = None):
 
         assert constrain_type in ['atoms', 'distance', 'angle', 'dihedral']
 
@@ -75,7 +81,7 @@ class XTBConstrain:
         self.constrain_type = constrain_type
         self.atom_indices = atom_indices
 
-    def get_constrain_string(self):
+    def get_constrain_string(self) -> str:
         if self.constrain_type == 'atoms':
             return '  atoms: {}\n'.format(utils.atom_indices_to_string(self.atom_indices))
         if self.constrain_type == 'distance':
@@ -97,12 +103,13 @@ class XTBConstrain:
     def __str__(self):
         return self.get_constrain_string()
 
-    def get_print_name(self, atoms=None):
+    def get_print_name(self, atoms=None) -> Optional[str]:
         pass
 
 
 class XTBScan:
-    def __init__(self, scan_type: str, atom_indices, start, end, num_step):
+    def __init__(self, scan_type: str, atom_indices: Union[np.ndarray, List[int]],
+                 start: float, end: float, num_step: int):
 
         assert int(num_step) >= 2
         assert scan_type in ['distance', 'angle', 'dihedral']
@@ -128,7 +135,7 @@ class XTBScan:
         return scan_string
 
     def get_values(self):
-        return np.linspace(float(self.start), float(self.end), int(self.num_step), endpoint=True, dtype=const.FLOAT)
+        return np.linspace(float(self.start), float(self.end), int(self.num_step), endpoint=True, dtype=config.FLOAT)
 
     def calc_real_value(self, coordinates: np.ndarray) -> float:
         if self.scan_type == 'distance':
@@ -151,63 +158,70 @@ class XTBScan:
         return self.get_scan_string()
 
 
-def xtbscan(input_xyz_file, xtb_params: XTBParams, scans, constrains,
-            force_constant='1.0', concerted=False, keep_log=0):
+def xtbscan(input_xyz_file: Union[str, Path],
+            job_name: str,
+            xtb_params: XTBParams,
+            scans: List[XTBScan],
+            constrains: List[XTBConstrain],
+            force_constant: str = '1.0',
+            concerted: bool = False,
+            keep_log: int = 0) -> None:
+
     # initial check
     if not CHECK_SETENV:
         setenv(num_threads=1, memory_per_thread='500M')
-    input_xyz_file = Path(input_xyz_file).resolve()
+    input_xyz_file = Path(input_xyz_file).absolute()
     if not input_xyz_file.exists():
         raise FileNotFoundError(str(input_xyz_file) + ' not found.')
 
     # run
     if not scans:
-        _opt(input_xyz_file, xtb_params, constrains, force_constant, keep_log)
+        _opt(input_xyz_file, job_name, xtb_params, constrains, force_constant, keep_log)
     elif len(scans) == 1:
-        _scan1d(input_xyz_file, xtb_params, scans[0], constrains, force_constant, keep_log)
+        _scan1d(input_xyz_file, job_name, xtb_params, scans[0], constrains, force_constant, keep_log)
     elif concerted:
-        _scan_concerted(input_xyz_file, xtb_params, scans, constrains, force_constant, keep_log)
+        _scan_concerted(input_xyz_file, job_name,xtb_params, scans, constrains, force_constant, keep_log)
     elif len(scans) == 2:
-        _scan2d(input_xyz_file, xtb_params, scans[0], scans[1], constrains, force_constant, keep_log)
+        _scan2d(input_xyz_file, job_name, xtb_params, scans[0], scans[1], constrains, force_constant, keep_log)
     else:
         raise ValueError('Only Opt, 1D scan, 2D scan, or concerted scan is available.')
 
 
-def _opt(input_xyz_file, xtb_params: XTBParams, constrains, force_constant='1.0', keep_log=0):
+def _opt(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
+         constrains: List[XTBConstrain], force_constant: str = '1.0', keep_log: int = 0) -> None:
+
     # common pre-process
-    result_xyz_file: Path = input_xyz_file.parent / (input_xyz_file.stem + const.OPT_XYZ_SUFFIX)
-    stop_file: Path = input_xyz_file.parent / (input_xyz_file.stem + const.STOP_FILE_SUFFIX)
-    workdir = input_xyz_file.parent / (const.WORKDIR_PREFIX + input_xyz_file.stem + const.WORKDIR_SUFFIX)
-    workdir = utils.get_unused_directory_path(workdir)
-    workdir.mkdir()
+    result_xyz_file: Path = input_xyz_file.parent / (job_name + '.xyz')
+    stop_file: Path = input_xyz_file.parent / (job_name + config.STOP_FILE_SUFFIX)
+    workdir = Path(tempfile.mkdtemp(dir=input_xyz_file.parent, prefix=job_name + '_')).absolute()
     prevdir = os.getcwd()
-    shutil.copy(input_xyz_file, workdir / const.INIT_XYZ_FILE)
+    shutil.copy(input_xyz_file, workdir / config.INIT_XYZ_FILE)
     os.chdir(str(workdir))
     calc_success = False
 
     # main process
     try:
         if len(constrains) > 0:
-            _save_input_file(const.INPUT_FILE, [], constrains, force_constant, concerted=False)
-            command = [config.XTB_BIN, const.INIT_XYZ_FILE, '--opt', '--input', const.INPUT_FILE]
+            _save_input_file(config.INPUT_FILE, [], constrains, force_constant, concerted=False)
+            command = [config.XTB_BIN, config.INIT_XYZ_FILE, '--opt', '--input', config.INPUT_FILE]
         else:
-            command = [config.XTB_BIN, const.INIT_XYZ_FILE, '--opt']
+            command = [config.XTB_BIN, config.INIT_XYZ_FILE, '--opt']
         command.extend(xtb_params.args)
 
-        with open(const.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
+        with open(config.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
             proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
             while True:
-                time.sleep(const.STOP_CHECK_INTERVAL)
+                time.sleep(config.STOP_CHECK_INTERVAL)
                 if stop_file.exists():
                     proc.terminate()
                     raise XTBTerminationError('Stopped by user')
                 if proc.poll() is not None:
                     break
-        with open(const.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
+        with open(config.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
             if 'normal termination of xtb' not in f.read():
                 raise RuntimeError('xtb optimization failed in {:}'.format(workdir))
 
-        shutil.copy(const.XTB_OPT_FILE, result_xyz_file)
+        shutil.copy(config.XTB_OPT_FILE, result_xyz_file)
         calc_success = True
 
     # common post-process
@@ -217,40 +231,39 @@ def _opt(input_xyz_file, xtb_params: XTBParams, constrains, force_constant='1.0'
             shutil.rmtree(workdir, ignore_errors=True)
 
 
-def _scan1d(input_xyz_file, xtb_params: XTBParams, scan: XTBScan, constrains, force_constant='1.0', keep_log=0):
+def _scan1d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
+            scan: XTBScan, constrains: List[XTBConstrain], force_constant: str = '1.0', keep_log: int = 0):
     # common pre-process
-    result_xyz_file: Path = input_xyz_file.parent / (input_xyz_file.stem + const.RESULT_XYZ_SUFFIX)
-    result_csv_file: Path = input_xyz_file.parent / (input_xyz_file.stem + const.RESULT_CSV_SUFFIX)
-    stop_file: Path = input_xyz_file.parent / (input_xyz_file.stem + const.STOP_FILE_SUFFIX)
-    workdir = input_xyz_file.parent / (const.WORKDIR_PREFIX + input_xyz_file.stem + const.WORKDIR_SUFFIX)
-    workdir = utils.get_unused_directory_path(workdir)
-    workdir.mkdir()
+    result_xyz_file: Path = input_xyz_file.parent / (job_name + '.xyz')
+    stop_file: Path = input_xyz_file.parent / (job_name + config.STOP_FILE_SUFFIX)
+    result_csv_file: Path = input_xyz_file.parent / (job_name + '.csv')
+    workdir = Path(tempfile.mkdtemp(dir=input_xyz_file.parent, prefix=job_name + '_')).absolute()
     prevdir = os.getcwd()
-    shutil.copy(input_xyz_file, workdir / const.INIT_XYZ_FILE)
+    shutil.copy(input_xyz_file, workdir / config.INIT_XYZ_FILE)
     os.chdir(str(workdir))
     calc_success = False
 
     # main process
     try:
-        _save_input_file(const.INPUT_FILE, [scan], constrains, force_constant, concerted=False)
-        command = [config.XTB_BIN, const.INIT_XYZ_FILE, '--opt', '--input', const.INPUT_FILE]
+        _save_input_file(config.INPUT_FILE, [scan], constrains, force_constant, concerted=False)
+        command = [config.XTB_BIN, config.INIT_XYZ_FILE, '--opt', '--input', config.INPUT_FILE]
         command.extend(xtb_params.args)
 
-        with open(const.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
+        with open(config.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
             proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
             while True:
-                time.sleep(const.STOP_CHECK_INTERVAL)
+                time.sleep(config.STOP_CHECK_INTERVAL)
                 if stop_file.exists():
                     proc.terminate()
                     raise XTBTerminationError('Stopped by user')
                 if proc.poll() is not None:
                     break
-        with open(const.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
+        with open(config.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
             if 'normal termination of xtb' not in f.read():
                 raise RuntimeError('xtb scan failed in {:}'.format(workdir))
 
-        atoms, coordinates_list, energy_list = xyzutils.read_xtbscan_file(const.XTB_SCAN_FILE)
-        relative_energy_list = (energy_list - np.min(energy_list)) * const.HARTREE_TO_KCAL
+        atoms, coordinates_list, energy_list = xyzutils.read_xtbscan_file(config.XTB_SCAN_FILE)
+        relative_energy_list = (energy_list - np.min(energy_list)) * config.HARTREE_TO_KCAL
         assigned_value_list = scan.get_values()
         real_value_list = [scan.calc_real_value(coord) for coord in coordinates_list]
         saddle_check_list = _check_saddle_1d(energy_list)
@@ -288,50 +301,51 @@ def _scan1d(input_xyz_file, xtb_params: XTBParams, scan: XTBScan, constrains, fo
             shutil.rmtree(workdir, ignore_errors=True)
 
 
-def _scan2d(input_xyz_file, xtb_params: XTBParams, scan1: XTBScan, scan2: XTBScan, constrains,
-            force_constant='1.0', keep_log=0):
+def _scan2d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
+            scan1: XTBScan, scan2: XTBScan, constrains: List[XTBConstrain],
+            force_constant: str = '1.0', keep_log: int = 0):
+
     if constrains is None:
         constrains = []
+
     # common pre-process
-    result_xyz_file: Path = input_xyz_file.parent / (input_xyz_file.stem + const.RESULT_XYZ_SUFFIX)
-    result_csv_file: Path = input_xyz_file.parent / (input_xyz_file.stem + const.RESULT_CSV_SUFFIX)
-    stop_file: Path = input_xyz_file.parent / (input_xyz_file.stem + const.STOP_FILE_SUFFIX)
-    workdir = input_xyz_file.parent / (const.WORKDIR_PREFIX + input_xyz_file.stem + const.WORKDIR_SUFFIX)
-    workdir = utils.get_unused_directory_path(workdir)
-    workdir.mkdir()
+    result_xyz_file: Path = input_xyz_file.parent / (job_name + '.xyz')
+    stop_file: Path = input_xyz_file.parent / (job_name + config.STOP_FILE_SUFFIX)
+    result_csv_file: Path = input_xyz_file.parent / (job_name + '.csv')
+    workdir = Path(tempfile.mkdtemp(dir=input_xyz_file.parent, prefix=job_name + '_')).absolute()
     prevdir = os.getcwd()
-    shutil.copy(input_xyz_file, workdir / const.INIT_XYZ_FILE)
+    shutil.copy(input_xyz_file, workdir / config.INIT_XYZ_FILE)
     os.chdir(str(workdir))
     calc_success = False
 
     # main process
     try:
-        # xtb command (common for all scans)
-        command = ['xtb', const.INIT_XYZ_FILE, '--opt', '--input', const.INPUT_FILE]
+        # xtbs command (common for all scans)
+        command = [config.XTB_BIN, config.INIT_XYZ_FILE, '--opt', '--input', config.INPUT_FILE]
         command.extend(xtb_params.args)
 
         # first dimension scan
         internal_workdir = workdir / 'scan1'
         internal_workdir.mkdir()
         os.chdir(internal_workdir)
-        shutil.copy(workdir / const.INIT_XYZ_FILE, internal_workdir)
+        shutil.copy(workdir / config.INIT_XYZ_FILE, internal_workdir)
         constrain2 = XTBConstrain(constrain_type=scan2.scan_type, atom_indices=scan2.atom_indices, value='auto')
-        _save_input_file(const.INPUT_FILE, [scan1], constrains + [constrain2], force_constant)
+        _save_input_file(config.INPUT_FILE, [scan1], constrains + [constrain2], force_constant)
 
-        with open(const.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
+        with open(config.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
             proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
             while True:
-                time.sleep(const.STOP_CHECK_INTERVAL)
+                time.sleep(config.STOP_CHECK_INTERVAL)
                 if stop_file.exists():
                     proc.terminate()
                     raise XTBTerminationError('Stopped by user')
                 if proc.poll() is not None:
                     break
-        with open(const.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
+        with open(config.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
             if 'normal termination of xtb' not in f.read():
                 raise RuntimeError('xtb scan failed in {:}'.format(workdir))
 
-        atoms, first_scanned_coordinates_list, _ = xyzutils.read_xtbscan_file(const.XTB_SCAN_FILE)
+        atoms, first_scanned_coordinates_list, _ = xyzutils.read_xtbscan_file(config.XTB_SCAN_FILE)
         os.chdir(workdir)
 
         # second dimension scan
@@ -342,23 +356,23 @@ def _scan2d(input_xyz_file, xtb_params: XTBParams, scan1: XTBScan, scan2: XTBSca
             internal_workdir = workdir / 'scan2_{:}'.format(i1 + 1)
             internal_workdir.mkdir()
             os.chdir(internal_workdir)
-            xyzutils.save_xyz_file(const.INIT_XYZ_FILE, atoms, first_scanned_coordinates_list[i1], 'init')
-            _save_input_file(const.INPUT_FILE, [scan2], constrains + [constrain1], force_constant)
+            xyzutils.save_xyz_file(config.INIT_XYZ_FILE, atoms, first_scanned_coordinates_list[i1], 'init')
+            _save_input_file(config.INPUT_FILE, [scan2], constrains + [constrain1], force_constant)
 
-            with open(const.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
+            with open(config.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
                 proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
                 while True:
-                    time.sleep(const.STOP_CHECK_INTERVAL)
+                    time.sleep(config.STOP_CHECK_INTERVAL)
                     if stop_file.exists():
                         proc.terminate()
                         raise XTBTerminationError('Stopped by user')
                     if proc.poll() is not None:
                         break
-            with open(const.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
+            with open(config.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
                 if 'normal termination of xtb' not in f.read():
                     raise RuntimeError('xtb scan failed in {:}'.format(workdir))
 
-            _, coordinates_list, energy_list = xyzutils.read_xtbscan_file(const.XTB_SCAN_FILE)
+            _, coordinates_list, energy_list = xyzutils.read_xtbscan_file(config.XTB_SCAN_FILE)
             coordinates_list_2d.append(coordinates_list)
             energy_list_2d.append(energy_list)
             os.chdir(workdir)
@@ -380,8 +394,8 @@ def _scan2d(input_xyz_file, xtb_params: XTBParams, scan1: XTBScan, scan2: XTBSca
                 assigned_value_list2.append(scan2_value_list[k2])
                 real_value_list1.append(scan1.calc_real_value(coordinates_list_2d[k1][k2]))
                 real_value_list2.append(scan2.calc_real_value(coordinates_list_2d[k1][k2]))
-        energy_list = np.array(energy_list, dtype=const.FLOAT)
-        relative_energy_list = (energy_list - np.min(energy_list)) * const.HARTREE_TO_KCAL
+        energy_list = np.array(energy_list, dtype=config.FLOAT)
+        relative_energy_list = (energy_list - np.min(energy_list)) * config.HARTREE_TO_KCAL
         saddle_check_list = _check_saddle_2d(relative_energy_list, scan1.num_step, scan2.num_step)
 
         # output csv data
@@ -420,40 +434,40 @@ def _scan2d(input_xyz_file, xtb_params: XTBParams, scan1: XTBScan, scan2: XTBSca
             shutil.rmtree(workdir, ignore_errors=True)
 
 
-def _scan_concerted(input_xyz_file, xtb_params: XTBParams, scans, constrains, force_constant='1.0', keep_log=0):
+def _scan_concerted(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
+                    scans: List[XTBScan], constrains: List[XTBConstrain],
+                    force_constant: str = '1.0', keep_log: int = 0):
     # common pre-process
-    result_xyz_file: Path = input_xyz_file.parent / (input_xyz_file.stem + const.RESULT_XYZ_SUFFIX)
-    result_csv_file: Path = input_xyz_file.parent / (input_xyz_file.stem + const.RESULT_CSV_SUFFIX)
-    stop_file: Path = input_xyz_file.parent / (input_xyz_file.stem + const.STOP_FILE_SUFFIX)
-    workdir = input_xyz_file.parent / (const.WORKDIR_PREFIX + input_xyz_file.stem + const.WORKDIR_SUFFIX)
-    workdir = utils.get_unused_directory_path(workdir)
-    workdir.mkdir()
+    result_xyz_file: Path = input_xyz_file.parent / (job_name + '.xyz')
+    stop_file: Path = input_xyz_file.parent / (job_name + config.STOP_FILE_SUFFIX)
+    result_csv_file: Path = input_xyz_file.parent / (job_name + '.csv')
+    workdir = Path(tempfile.mkdtemp(dir=input_xyz_file.parent, prefix=job_name + '_')).absolute()
     prevdir = os.getcwd()
-    shutil.copy(input_xyz_file, workdir / const.INIT_XYZ_FILE)
+    shutil.copy(input_xyz_file, workdir / config.INIT_XYZ_FILE)
     os.chdir(str(workdir))
     calc_success = False
 
     # main process
     try:
-        _save_input_file(const.INPUT_FILE, scans, constrains, force_constant, concerted=True)
-        command = ['xtb', const.INIT_XYZ_FILE, '--opt', '--input', const.INPUT_FILE]
+        _save_input_file(config.INPUT_FILE, scans, constrains, force_constant, concerted=True)
+        command = [config.XTB_BIN, config.INIT_XYZ_FILE, '--opt', '--input', config.INPUT_FILE]
         command.extend(xtb_params.args)
 
-        with open(const.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
+        with open(config.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
             proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
             while True:
-                time.sleep(const.STOP_CHECK_INTERVAL)
+                time.sleep(config.STOP_CHECK_INTERVAL)
                 if stop_file.exists():
                     proc.terminate()
                     raise XTBTerminationError('Stopped by user')
                 if proc.poll() is not None:
                     break
-        with open(const.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
+        with open(config.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
             if 'normal termination of xtb' not in f.read():
                 raise RuntimeError('xtb scan failed in {:}'.format(workdir))
 
-        atoms, coordinates_list, energy_list = xyzutils.read_xtbscan_file(const.XTB_SCAN_FILE)
-        relative_energy_list = (energy_list - np.min(energy_list)) * const.HARTREE_TO_KCAL
+        atoms, coordinates_list, energy_list = xyzutils.read_xtbscan_file(config.XTB_SCAN_FILE)
+        relative_energy_list = (energy_list - np.min(energy_list)) * config.HARTREE_TO_KCAL
         assigned_values_list = [scan.get_values() for scan in scans]
         real_values_list = [[scan.calc_real_value(coord) for coord in coordinates_list] for scan in scans]
         saddle_check_list = _check_saddle_1d(relative_energy_list)
@@ -495,7 +509,7 @@ def _scan_concerted(input_xyz_file, xtb_params: XTBParams, scans, constrains, fo
             shutil.rmtree(workdir, ignore_errors=True)
 
 
-def setenv(num_threads=1, memory_per_thread=None):
+def setenv(num_threads: int = 1, memory_per_thread: Optional[str] = None) -> None:
     assert int(num_threads) > 0
     num_threads = str(int(num_threads))
 
@@ -510,17 +524,22 @@ def setenv(num_threads=1, memory_per_thread=None):
     os.environ['OMP_STACKSIZE'] = memory_per_thread
     os.environ['MKL_NUM_THREADS'] = num_threads
 
-    if config.XTB_BIN_DIR not in os.environ['PATH']:
-        os.environ['PATH'] = '{:};{:}'.format(config.XTB_BIN_DIR, os.environ['PATH'])
+    current_path = os.environ.get('PATH', '')
+    xtb_bin_dir = str(Path(config.XTB_BIN).parent)
+    if xtb_bin_dir not in current_path.split(os.pathsep):
+        os.environ['PATH'] = current_path + os.pathsep + xtb_bin_dir
+
+    current_path = os.environ.get('PATH', '')
     if config.XTB_OTHER_LIB_DIR is not None:
-        if config.XTB_PARAM_DIR not in os.environ['PATH']:
-            os.environ['PATH'] = '{:};{:}'.format(config.XTB_OTHER_LIB_DIR, os.environ['PATH'])
+        if config.XTB_OTHER_LIB_DIR not in os.environ['PATH']:
+            current_path + os.pathsep + config.XTB_OTHER_LIB_DIR
 
     global CHECK_SETENV
     CHECK_SETENV = True
 
 
-def _save_input_file(file, scans, constrains, force_constant='1.0', concerted=False) -> None:
+def _save_input_file(file: Union[str, Path], scans: List[XTBScan], constrains: List[XTBConstrain],
+                     force_constant: str = '1.0', concerted: bool = False) -> None:
     data = ['$constrain\n', '  force constant={}\n'.format(force_constant)]
 
     for constrain in constrains:
@@ -587,122 +606,3 @@ def _check_saddle_2d(energies: np.ndarray, num_dim1, num_dim2) -> np.ndarray:
             """
 
     return _saddle_check_list.flatten()
-
-
-# Additional functions for geomTric Engines #
-
-
-def xtb_energy_and_gradient(atoms, coordinates, xtb_params: XTBParams, workdir: Path):
-    # initial check
-    if not CHECK_SETENV:
-        setenv(num_threads=1, memory_per_thread='500M')
-
-    if workdir.exists():
-        raise RuntimeError('Indicated XTB working directory already exists.')
-
-    workdir.mkdir()
-    prevdir = os.getcwd()
-
-    try:
-        os.chdir(str(workdir))
-        xyzutils.save_xyz_file(const.INIT_XYZ_FILE, atoms, coordinates, 'for energy and gradient')
-        command = [config.XTB_BIN, const.INIT_XYZ_FILE, '--grad']
-        command.extend(xtb_params.args)
-        with open(const.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
-            proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
-            proc.wait()
-        with open(const.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
-            if 'normal termination of xtb' not in f.read():
-                raise RuntimeError('xtb optimization failed in {:}'.format(workdir))
-        energy = _read_xtb_energy(const.XTB_ENERGY_FILE)
-        gradient = _read_xtb_gradient(const.XTB_GRADIENT_FILE, len(atoms))
-
-    except:
-        raise
-
-    else:
-        return energy, gradient
-
-    finally:
-        os.chdir(prevdir)
-        try:
-            shutil.rmtree(workdir)
-        except:
-            pass
-
-
-def xtb_hessian(atoms, coordinates, xtb_params: XTBParams, workdir: Path):
-    # initial check
-    if not CHECK_SETENV:
-        setenv(num_threads=1, memory_per_thread='500M')
-
-    if workdir.exists():
-        raise RuntimeError('Indicated XTB working directory already exists.')
-
-    workdir.mkdir()
-    prevdir = os.getcwd()
-
-    try:
-        os.chdir(str(workdir))
-        xyzutils.save_xyz_file(const.INIT_XYZ_FILE, atoms, coordinates, 'for hessian')
-        command = [config.XTB_BIN, const.INIT_XYZ_FILE, '--hess']
-        command.extend(xtb_params.args)
-        with open(const.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
-            proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
-            proc.wait()
-        with open(const.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
-            if 'normal termination of xtb' not in f.read():
-                raise RuntimeError('xtb optimization failed in {:}'.format(workdir))
-        hess = _read_xtb_hessian(const.XTB_HESSIAN_FILE, len(atoms))
-
-    except:
-        raise
-
-    else:
-        return hess
-
-    finally:
-        os.chdir(prevdir)
-        try:
-            shutil.rmtree(workdir)
-        except:
-            pass
-
-
-def _read_xtb_energy(energy_file) -> float:
-    energy_file = Path(energy_file)
-    with energy_file.open(mode='r') as f:
-        energy_data = f.readlines()
-    assert energy_data[0].strip().startswith('$energy')
-    return float(energy_data[1].strip().split()[1])
-
-
-def _read_xtb_gradient(gradient_file, num_atom: int) -> np.ndarray:
-    gradient_file = Path(gradient_file)
-    with gradient_file.open(mode='r') as f:
-        gradient_data = f.readlines()
-    assert gradient_data[0].strip().startswith('$grad')
-    gradient = []
-    for line in gradient_data[2+num_atom:2+2*num_atom]:
-        gradient.append(line.strip().split())
-
-    return np.array(gradient, dtype=const.FLOAT)
-
-
-def _read_xtb_hessian(hessian_file, num_atom: int) -> np.ndarray:
-    hessian_file = Path(hessian_file)
-    with hessian_file.open(mode='r') as f:
-        hessian_data = f.readlines()
-    assert hessian_data[0].strip().startswith('$hessian')
-
-    hess_1d = []
-    for line in hessian_data[1:]:
-        if line.strip() == '':
-            continue
-        if line.strip().startswith('$end'):
-            break
-        hess_1d.extend(line.strip().split())
-
-    assert len(hess_1d) == (num_atom * 3) ** 2
-
-    return np.array(hess_1d, dtype=const.FLOAT).reshape((3*num_atom, 3*num_atom))

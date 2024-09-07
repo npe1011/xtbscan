@@ -1,9 +1,15 @@
 from pathlib import Path
-
 import numpy as np
 
-from const import ATOM_LIST, FLOAT
-import xyzutils
+try:
+    import cclib
+except ImportError:
+    CCLIB = False
+else:
+    CCLIB = True
+
+from config import ATOM_LIST, FLOAT
+from xtbscan import xyzutils
 
 
 def gaussian_input_to_xyz(file: Path) -> Path:
@@ -14,7 +20,7 @@ def gaussian_input_to_xyz(file: Path) -> Path:
     input_data = []
     structure_data = []
 
-    file = Path(file).resolve()
+    file = Path(file).absolute()
 
     with file.open(mode='r') as f:
 
@@ -78,8 +84,8 @@ def gaussian_log_to_xyz(file: Path) -> Path:
                 num_coord = num
             if "Standard orientation:" in line:
                 num_coord = num
-            elif "Multiplicity =" in line:
-                line_charge_multi = line
+            # elif "Multiplicity =" in line:
+                # line_charge_multi = line
 
         # charge = int(line_charge_multi.strip().split()[2])
         # multi = int(line_charge_multi.strip().split()[5])
@@ -98,9 +104,21 @@ def gaussian_log_to_xyz(file: Path) -> Path:
             coordinates.append([float(coord_x), float(coord_y), float(coord_z)])
             i = i + 1
 
-    atoms = np.ndarray(atoms)
-    coordinates = np.ndarray(coordinates, dtype=FLOAT)
+    atoms = np.array(atoms)
+    coordinates = np.array(coordinates, dtype=FLOAT)
     output_file = file.parent / (file.stem + '.xyz')
     xyzutils.save_xyz_file(output_file, atoms, coordinates, 'structure read from gaussian log file')
 
+    return output_file
+
+
+def other_to_xyz(file: Path) -> Path:
+    if not CCLIB:
+        raise RuntimeError('cclib is required to parse other than Gaussian files.')
+    data = cclib.io.ccread(str(file))
+
+    coordinates = data.atomcoords[-1,::]
+    atoms = np.array([ATOM_LIST[n] for n in data.atomnos])
+    output_file = file.parent / (file.stem + '.xyz')
+    xyzutils.save_xyz_file(output_file, atoms, coordinates, 'structure read from log file via cclib')
     return output_file

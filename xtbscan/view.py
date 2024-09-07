@@ -2,6 +2,7 @@ import csv
 from pathlib import Path
 import subprocess as sp
 import tempfile
+from typing import Union
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,12 +11,10 @@ from matplotlib.ticker import MaxNLocator
 from mpl_toolkits.mplot3d import Axes3D
 
 import config
-import const
-import xyzutils
-import utils
+from xtbscan import xyzutils, utils
 
 
-def plot_scan(csv_file, annotation=True):
+def plot_scan(csv_file: Union[str, Path], annotation: bool = True) -> None:
     csv_file = Path(csv_file)
     with csv_file.open(mode='r') as f:
         mode = f.readline().lower().split(',')[0].strip()
@@ -27,7 +26,7 @@ def plot_scan(csv_file, annotation=True):
             _plot_scan_concerted(csv_file, annotation=annotation)
 
 
-def _plot_scan_1d(csv_file: Path, annotation: bool):
+def _plot_scan_1d(csv_file: Path, annotation: bool) -> None:
     energies = []
     parameters = []
     saddle_check_list = []
@@ -70,8 +69,7 @@ def _plot_scan_1d(csv_file: Path, annotation: bool):
     plt.show()
 
 
-
-def _plot_scan_2d(csv_file: Path, annotation: bool):
+def _plot_scan_2d(csv_file: Path, annotation: bool) -> None:
     energies = []
     parameters1 = []
     parameters2 = []
@@ -123,7 +121,7 @@ def _plot_scan_2d(csv_file: Path, annotation: bool):
     plt.show()
 
 
-def _plot_scan_concerted(csv_file: Path, annotation: bool):
+def _plot_scan_concerted(csv_file: Path, annotation: bool) -> None:
     energies = []
     saddle_check_list = []
     with csv_file.open(mode='r') as f:
@@ -163,7 +161,7 @@ def _plot_scan_concerted(csv_file: Path, annotation: bool):
     plt.show()
 
 
-def plot_surface(csv_file):
+def plot_surface(csv_file: Union[str, Path]) -> None:
     csv_file = Path(csv_file)
     energies = []
     parameters1 = []
@@ -192,9 +190,9 @@ def plot_surface(csv_file):
         pass
     ax = fig.add_subplot(111, projection='3d')
 
-    x1 = np.array(parameters1, dtype=const.FLOAT).reshape((num_dim1, num_dim2))
-    x2 = np.array(parameters2, dtype=const.FLOAT).reshape((num_dim1, num_dim2))
-    z = np.array(energies, dtype=const.FLOAT).reshape((num_dim1, num_dim2))
+    x1 = np.array(parameters1, dtype=config.FLOAT).reshape((num_dim1, num_dim2))
+    x2 = np.array(parameters2, dtype=config.FLOAT).reshape((num_dim1, num_dim2))
+    z = np.array(energies, dtype=config.FLOAT).reshape((num_dim1, num_dim2))
 
     ax.plot_surface(x1, x2, z, cmap=cm.coolwarm, linewidth=0, antialiased=False)
 
@@ -211,12 +209,12 @@ def plot_surface(csv_file):
     plt.show()
 
 
-def view_xyz_file(xyz_file):
+def view_xyz_file(xyz_file: Union[str, Path]) -> None:
     sp.Popen([config.VIEWER_PATH, str(xyz_file)])
 
 
 @utils.async_func
-def view_xyz_structure(atoms, coordinates, title=''):
+def view_xyz_structure(atoms: np.ndarray, coordinates: np.ndarray, title: str = ''):
     _, file = tempfile.mkstemp(suffix='.xyz', text=True)
     xyzutils.save_xyz_file(file, atoms, coordinates, title)
     sp.run([config.VIEWER_PATH, str(file)])

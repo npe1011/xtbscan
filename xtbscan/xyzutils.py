@@ -1,11 +1,12 @@
+from typing import List, Tuple, Union
 from pathlib import Path
 
 import numpy as np
 
-from const import FLOAT, XYZ_FORMAT
+from config import FLOAT, XYZ_FORMAT
 
 
-def save_xyz_file(xyz_file, atoms: np.ndarray, coordinates: np.ndarray, title='') -> None:
+def save_xyz_file(xyz_file: Union[str, Path], atoms: np.ndarray, coordinates: np.ndarray, title: str = '') -> None:
     xyz_file = Path(xyz_file)
     data = [
         str(len(atoms)) + '\n',
@@ -17,7 +18,7 @@ def save_xyz_file(xyz_file, atoms: np.ndarray, coordinates: np.ndarray, title=''
         f.writelines(data)
 
 
-def read_single_xyz_file(xyz_file) -> tuple:
+def read_single_xyz_file(xyz_file: Union[str, Path]) -> Tuple[np.ndarray, np.ndarray]:
     """
     :return: tuple(atoms: np.ndarray, coordinates: np.ndarray)
     """
@@ -38,7 +39,7 @@ def read_single_xyz_file(xyz_file) -> tuple:
     return np.array(atoms), np.array(coordinates, dtype=FLOAT)
 
 
-def read_sequential_xyz_file(file) -> tuple:
+def read_sequential_xyz_file(file: Union[str, Path]) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
     return: tuple(atoms, coordinates_list, title_list)
     atoms: np.ndarray
@@ -86,7 +87,7 @@ def read_sequential_xyz_file(file) -> tuple:
     return np.array(atoms), np.array(coordinates_list, dtype=FLOAT), title_list
 
 
-def read_xtbscan_file(file) -> tuple:
+def read_xtbscan_file(file: Union[str, Path]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 
     """
     return: tuple(atoms, coordinates_list, energy_list)
@@ -102,7 +103,7 @@ def read_xtbscan_file(file) -> tuple:
         title: str = title.strip().lower()
         if title.startswith('energy'):
             # case
-            # energy: -167.316733480097 xtb: 6.4.1 (unknown)
+            # energy: -167.316733480097 xtbscan: 6.4.1 (unknown)
             energy_list.append(float(title.split(':', maxsplit=1)[1].strip().split()[0].strip()))
         elif title.startswith('scf done'):
             # case
@@ -114,7 +115,10 @@ def read_xtbscan_file(file) -> tuple:
     return atoms, coordinates_list, np.array(energy_list, dtype=FLOAT)
 
 
-def save_sequential_xyz_file(xyz_file, atoms, coordinates_list, title_list) -> None:
+def save_sequential_xyz_file(xyz_file: Union[str, Path],
+                             atoms: np.ndarray,
+                             coordinates_list: Union[np.ndarray, List[np.ndarray]],
+                             title_list: List[str]) -> None:
     """
     atoms: np.ndarray
     coordinates_list np.ndarray 3d (num_conf x num_atoms x 3)
@@ -132,19 +136,19 @@ def save_sequential_xyz_file(xyz_file, atoms, coordinates_list, title_list) -> N
         f.writelines(data)
 
 
-def get_xyz_string(atoms, coordinates) -> str:
+def get_xyz_string(atoms: Union[List[str], np.ndarray], coordinates: np.ndarray) -> str:
     data = []
     for i in range(len(atoms)):
         data.append(XYZ_FORMAT.format(atoms[i], coordinates[i][0], coordinates[i][1], coordinates[i][2]))
     return ''.join(data)
 
 
-def get_num_structures(xyz_file) -> int:
+def get_num_structures(xyz_file: Union[str, Path]) -> int:
     _, _, title_list = read_sequential_xyz_file(xyz_file)
     return len(title_list)
 
 
-def calc_distance(coordinates: np.ndarray, atom_indices, string=False):
+def calc_distance(coordinates: np.ndarray, atom_indices: Union[np.ndarray, List[int]], string=False) -> Union[float, str]:
     assert len(atom_indices) == 2
     v = float(np.linalg.norm(coordinates[atom_indices[0]] - coordinates[atom_indices[1]]))
     if not string:
@@ -153,7 +157,7 @@ def calc_distance(coordinates: np.ndarray, atom_indices, string=False):
         return '{:.4f}'.format(v)
 
 
-def calc_angle(coordinates: np.ndarray, atom_indices, string=False):
+def calc_angle(coordinates: np.ndarray, atom_indices: Union[np.ndarray, List[int]], string=False) -> Union[float, str]:
     assert len(atom_indices) == 3
     target_coordinates = coordinates[atom_indices]
 
@@ -169,7 +173,8 @@ def calc_angle(coordinates: np.ndarray, atom_indices, string=False):
         return '{:.1f}'.format(v)
 
 
-def calc_dihedral(coordinates: np.ndarray, atom_indices, string=False):
+def calc_dihedral(coordinates: np.ndarray, atom_indices: Union[np.ndarray, List[int]],
+                  string=False) -> Union[float, str]:
     """
     return dihedral angle (degrees) of four atoms specified with atom_indices
     :param coordinates: coordinates

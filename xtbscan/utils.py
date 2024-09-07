@@ -1,19 +1,10 @@
 import os
 import subprocess as sp
-from pathlib import Path
 from threading import Thread
+from typing import List
 
 
-def get_unused_directory_path(path: Path) -> Path:
-    count = 0
-    path = path.resolve()
-    name = path.name
-    while path.exists():
-        path = path.parent / (name + str(count))
-    return path
-
-
-def read_atom_list_string(atom_list_string: str) -> list:
+def read_atom_list_string(atom_list_string: str) -> List[int]:
     """
     return atom number list (int list) from string as "1,3,5-10" "5 15 16" etc.
     as 0-based number list
@@ -36,7 +27,7 @@ def expand_atom_list_string(atom_list_string: str) -> str:
     return ','.join([str(x+1) for x in read_atom_list_string(atom_list_string)])
 
 
-def atom_indices_to_string(atom_indices: list) -> str:
+def atom_indices_to_string(atom_indices: List[int]) -> str:
     terms = []
     current_start_index = None
     current_end_index = None
@@ -81,4 +72,3 @@ def async_func(func):
         return _func
 
     return wrapper
-
