@@ -4,6 +4,9 @@ XTB_BIN = 'D:/programs/xtb-6.6.1/bin/xtb.exe'
 XTB_PARAM_DIR = 'D:/programs/xtb-6.6.1/share/xtb'
 XTB_OTHER_LIB_DIR = None  # in case other library directory (MinGW etc.) has  to be in path to run xtbscan.
 
+# Use Scipy to check saddle point in 2d scan
+USE_SCIPY = True
+
 # Customization of plotting
 SCAN_PLOT_1D_WIDTH = 6
 SCAN_PLOT_1D_HEIGHT = 4
