@@ -4,6 +4,7 @@
   - [1. はじめに](#1-はじめに)
     - [1.1. 概要](#11-概要)
     - [1.2. 更新履歴](#12-更新履歴)
+      - [2024/10/18](#20241018)
       - [2024/9/6](#202496)
       - [2022/11/11](#20221111)
   - [2. 動作条件と起動](#2-動作条件と起動)
@@ -28,6 +29,9 @@ GrimmeのxTBを利用して、いわゆるScan (reluxed scan)をWindows上のGUI
 
 ### 1.2. 更新履歴
 
+#### 2024/10/18
+- 2D Scanの鞍点判定をscipyのspline fitを利用する方法に変更。やや処理が重くなり、以前よりまともな判定がでるように。
+
 #### 2024/9/6
 - リファクタリング + GUIデザインの変更
 - cclibを利用した読み込みを追加
@@ -43,12 +47,13 @@ GrimmeのxTBを利用して、いわゆるScan (reluxed scan)をWindows上のGUI
 - Python 3.8
 - wxpython 4.1.1
 - numpy 1.22.2
+- scipy 1.8.0
 - cclib 1.7.2
 - matplotlib 3.5.1
 - xtb-6.6.1 for Windows
   
 ```
-python -m pip install wxpython cclib matplotlib
+python -m pip install wxpython cclib matplotlib scipy
 ```
 で雑に動くと思います。Pythonが古いとエラーがでるかもしれません。
 
@@ -62,6 +67,13 @@ xtbscanフォルダの `config.py` をテキストエディタで開き、上の
 VIEWER_PATH = 'D:/programs/jmol/jmol.bat'
 XTB_BIN = 'D:/programs/xtb-6.6.1/bin/xtb.exe'
 XTB_PARAM_DIR = 'D:/programs/xtb-6.6.1/share/xtb'
+```
+
+また下記をFalseにすると、2D　Scanの鞍点の判定にscipyを使わなくなります (以前の適当な方法に戻す)。
+その場合scipyはインストールしなくてもよいです。
+```
+# Use Scipy to check saddle point in 2d scan
+USE_SCIPY = True
 ```
 
 ## 3. 使い方
@@ -127,7 +139,7 @@ XTB_PARAM_DIR = 'D:/programs/xtb-6.6.1/share/xtb'
 - 特定の番号の構造を見るときは、その番号を打ち込んで、viewで見れます。copyを押すと座標情報がクリップボードにコピーされます。
 - plot を押すとscanしたパラメータ/エネルギーの図が表示されます。1次元なら普通のグラフ、2次元なら3次元のグラフが表示されます。エネルギーは、最低値を0として相対値（kcal/mol）で表示されます。
 - annotationにチェックを入れると、どの点がどの番号かも表示します。上記から番号を指定するときに便利です。
-- annotationにチェックを入れていると、「saddleっぽい」点が赤くなります。判定は適当です。
+- annotationにチェックを入れていると、「saddleっぽい」点が赤くなります。1次元scanの場合は単に極大値です。2次元の場合、離散値からscipyを利用したspline fittingをおこない、その近似曲面上の一階/二階の微分からsaddle判定をおこないます（USE_SCIPY=Trueのとき）。勾配に関する判定を緩めにしてありますので、間違ったのも拾いますが、そこは人間が判断しましょう。
 - 2次元scanの場合、散布図だけでなくsurfaceボタンを押すとPESのような表示もできます。
 
 
