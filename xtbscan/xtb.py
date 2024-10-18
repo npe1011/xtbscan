@@ -588,7 +588,7 @@ def _check_saddle_2d(energies: np.ndarray, num_dim1, num_dim2) -> np.ndarray:
     if config.USE_SCIPY and IMPORT_SCIPY:
         return _check_saddle_2d_with_spline_fit(energies, num_dim1, num_dim2)
     elif config.USE_SCIPY:
-        raise ImportError('config.USE_SCIPY is true but import failed. Install scipy or set USE_SCIPY=false.')
+        raise ImportError('config.USE_SCIPY is True but import failed. Install scipy or set USE_SCIPY=False.')
     else:
         return _check_saddle_2d_without_spline_fit(energies, num_dim1, num_dim2)
 
