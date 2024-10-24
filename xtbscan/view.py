@@ -2,7 +2,7 @@ import csv
 from pathlib import Path
 import subprocess as sp
 import tempfile
-from typing import Union
+from typing import Union, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,17 +11,21 @@ from matplotlib.ticker import MaxNLocator
 from mpl_toolkits.mplot3d import Axes3D
 
 import config
-from xtbscan import xyzutils, utils
+from xtbscan import xyzutils, utils, saddle
 
 
-def plot_scan(csv_file: Union[str, Path], annotation: bool = True) -> None:
+def plot_scan(csv_file: Union[str, Path], annotation: bool, grad_tol: Optional[float],
+              num_procs: Optional[int]) -> None:
+    """
+    grad_tol: (only for 2D) float > recheck saddle point with this value. None > not check.
+    """
     csv_file = Path(csv_file)
     with csv_file.open(mode='r') as f:
         mode = f.readline().lower().split(',')[0].strip()
         if mode == '1d':
             _plot_scan_1d(csv_file, annotation=annotation)
         elif mode == '2d':
-            _plot_scan_2d(csv_file, annotation=annotation)
+            _plot_scan_2d(csv_file, annotation=annotation, grad_tol=grad_tol, num_procs=num_procs)
         else:
             _plot_scan_concerted(csv_file, annotation=annotation)
 
@@ -52,8 +56,8 @@ def _plot_scan_1d(csv_file: Path, annotation: bool) -> None:
     ax = fig.add_subplot(111)
 
     if annotation:
-        for (x, y, name, saddle) in zip(parameters, energies, names, saddle_check_list):
-            if saddle == 1:
+        for (x, y, name, saddle_flag) in zip(parameters, energies, names, saddle_check_list):
+            if saddle_flag == 1:
                 ax.plot(x, y, 'o', color=config.SCAN_PLOT_1D_TS_COLOR)
                 ax.annotate(name, xy=(x, y), color=config.SCAN_PLOT_1D_TS_COLOR)
             else:
@@ -69,17 +73,21 @@ def _plot_scan_1d(csv_file: Path, annotation: bool) -> None:
     plt.show()
 
 
-def _plot_scan_2d(csv_file: Path, annotation: bool) -> None:
+def _plot_scan_2d(csv_file: Path, annotation: bool, grad_tol: Optional[float], num_procs: Optional[int]) -> None:
     energies = []
     parameters1 = []
     parameters2 = []
     saddle_check_list = []
+    flag_2d = False
     with csv_file.open(mode='r') as f:
         reader = csv.reader(f)
         for i, line in enumerate(reader):
             if i == 0:
-                continue
-            if i == 1:
+                if line[0].lower() == '2d':
+                    flag_2d = True
+                    num_dim1 = int(line[1])
+                    num_dim2 = int(line[2])
+            elif i == 1:
                 parameter1_name = line[2].split(maxsplit=1)[1].strip()  # line[2] ~ "[scan] distance N10-C25 (ang.)"
                 parameter2_name = line[4].split(maxsplit=1)[1].strip()  # line[4] ~ "[scan] distance N10-C25 (ang.)"
             else:
@@ -87,6 +95,14 @@ def _plot_scan_2d(csv_file: Path, annotation: bool) -> None:
                 parameters2.append(float(line[4]))
                 energies.append(float(line[-2]))
                 saddle_check_list.append(int(line[-1]))
+
+    # For 2D and given grad_tol, recalculate saddle with the give grad_tol
+    if grad_tol is not None and flag_2d and annotation:
+        print('Saddle check is re-running...')
+        saddle_check_list = saddle.check_saddle_2d(np.array(energies, dtype=float),
+                                                   num_dim1, num_dim2, grad_tol, num_procs)
+        saddle_indices = list(np.where(saddle_check_list == 1)[0] + 1)
+        print('Saddle point indices:', ','.join([str(i) for i in saddle_indices]))
 
     names = [str(n + 1) for n in range(len(energies))]
 
@@ -97,9 +113,9 @@ def _plot_scan_2d(csv_file: Path, annotation: bool) -> None:
         pass
     ax = fig.add_subplot(111, projection='3d')
 
-    for (x, y, z, name, saddle) in zip(parameters1, parameters2, energies, names, saddle_check_list):
+    for (x, y, z, name, saddle_flag) in zip(parameters1, parameters2, energies, names, saddle_check_list):
         if annotation:
-            if saddle == 1:
+            if saddle_flag == 1:
                 ax.scatter3D(x, y, z, marker='o', color=config.SCAN_PLOT_2D_TS_COLOR)
                 ax.text(x, y, z, name, color=config.SCAN_PLOT_2D_TS_COLOR)
             else:
@@ -144,8 +160,8 @@ def _plot_scan_concerted(csv_file: Path, annotation: bool) -> None:
     ax = fig.add_subplot(111)
 
     if annotation:
-        for (x, y, name, saddle) in zip(parameters, energies, names, saddle_check_list):
-            if saddle == 1:
+        for (x, y, name, saddle_flag) in zip(parameters, energies, names, saddle_check_list):
+            if saddle_flag == 1:
                 ax.plot(x, y, 'o', color=config.SCAN_PLOT_1D_TS_COLOR)
                 ax.annotate(name, xy=(x, y), color=config.SCAN_PLOT_1D_TS_COLOR)
             else:

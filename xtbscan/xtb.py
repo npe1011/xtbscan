@@ -10,16 +10,7 @@ from typing import Any, List, Union, Optional
 import numpy as np
 
 import config
-from xtbscan import utils, xyzutils
-
-if config.USE_SCIPY:
-    try:
-        from scipy.interpolate import RectBivariateSpline
-    except:
-        IMPORT_SCIPY = False
-    else:
-        IMPORT_SCIPY = True
-
+from xtbscan import utils, xyzutils, saddle
 
 # Global variable to check whether setenv run or not
 CHECK_SETENV = False
@@ -275,7 +266,7 @@ def _scan1d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
         relative_energy_list = (energy_list - np.min(energy_list)) * config.HARTREE_TO_KCAL
         assigned_value_list = scan.get_values()
         real_value_list = [scan.calc_real_value(coord) for coord in coordinates_list]
-        saddle_check_list = _check_saddle_1d(energy_list)
+        saddle_check_list = saddle.check_saddle_1d(energy_list)
 
         # output csv data
         csv_data = [['1d', str(scan.num_step)],
@@ -405,7 +396,15 @@ def _scan2d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
                 real_value_list2.append(scan2.calc_real_value(coordinates_list_2d[k1][k2]))
         energy_list = np.array(energy_list, dtype=config.FLOAT)
         relative_energy_list = (energy_list - np.min(energy_list)) * config.HARTREE_TO_KCAL
-        saddle_check_list = _check_saddle_2d(relative_energy_list, scan1.num_step, scan2.num_step)
+
+        # check saddle. grad_tol > default value in config
+        omp_num_threads = os.environ['OMP_NUM_THREADS']
+        if not omp_num_threads:
+            num_procs = None
+        else:
+            num_procs = int(omp_num_threads.split(',')[0])
+        saddle_check_list = saddle.check_saddle_2d(relative_energy_list, scan1.num_step, scan2.num_step,
+                                                   grad_tol=None, num_procs=num_procs)
 
         # output csv data
         csv_data = [['2d', str(scan1.num_step), str(scan2.num_step)],
@@ -479,7 +478,7 @@ def _scan_concerted(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
         relative_energy_list = (energy_list - np.min(energy_list)) * config.HARTREE_TO_KCAL
         assigned_values_list = [scan.get_values() for scan in scans]
         real_values_list = [[scan.calc_real_value(coord) for coord in coordinates_list] for scan in scans]
-        saddle_check_list = _check_saddle_1d(relative_energy_list)
+        saddle_check_list = saddle.check_saddle_1d(relative_energy_list)
 
         # output csv data
         header_line = ['#']
@@ -573,99 +572,3 @@ def _save_input_file(file: Union[str, Path], scans: List[XTBScan], constrains: L
     file = Path(file)
     with file.open(mode='w') as f:
         f.writelines(data)
-
-
-def _check_saddle_1d(energies: np.ndarray) -> np.ndarray:
-    saddle_check_list = np.full_like(energies, 0, dtype='int32')
-    for i in range(1, len(energies) - 1):
-        if energies[i - 1] < energies[i] and energies[i + 1] < energies[i]:
-            saddle_check_list[i] = 1
-    return saddle_check_list
-
-
-def _check_saddle_2d(energies: np.ndarray, num_dim1, num_dim2) -> np.ndarray:
-
-    if config.USE_SCIPY and IMPORT_SCIPY:
-        return _check_saddle_2d_with_spline_fit(energies, num_dim1, num_dim2)
-    elif config.USE_SCIPY:
-        raise ImportError('config.USE_SCIPY is True but import failed. Install scipy or set USE_SCIPY=False.')
-    else:
-        return _check_saddle_2d_without_spline_fit(energies, num_dim1, num_dim2)
-
-
-def _check_saddle_2d_with_spline_fit(energies: np.ndarray, num_dim1, num_dim2) -> np.ndarray:
-
-    # energies are standardized and reshaped
-    _energies = energies - np.mean(energies)
-    scale = np.max(np.abs(_energies))
-    if not np.isclose(scale, 0.0):
-        _energies /= scale
-    _energies = _energies.reshape(num_dim1, num_dim2)
-
-    saddle_check_list = np.full_like(_energies, 0, dtype=int)
-
-    # Some constants to adjust
-    PARAM_MAX = 10.0
-    NUM_MESH = 1000
-    NORM_THRESHOLD = 1e-3  # Loose check not to miss saddle points.
-
-    xs = np.linspace(0.0, PARAM_MAX, num_dim1)
-    ys = np.linspace(0.0, PARAM_MAX, num_dim2)
-    spline = RectBivariateSpline(xs, ys, _energies)
-
-    mesh_xs = np.linspace(0.0, PARAM_MAX, NUM_MESH)
-    mesh_ys = np.linspace(0.0, PARAM_MAX, NUM_MESH)
-
-    for x in mesh_xs:
-        for y in mesh_ys:
-            # first derivatives and stationary point check
-            dx = float(spline(x, y, dx=1, dy=0))
-            dy = float(spline(x, y, dx=0, dy=1))
-            df_norm = np.sqrt(dx**2 + dy**2)
-            if df_norm > NORM_THRESHOLD: 
-                continue
-
-            # Hessian and saddle check
-            dx2 = float(spline(x, y, dx=2, dy=0))
-            dy2 = float(spline(x, y, dx=0, dy=2))
-            dxdy = float(spline(x, y, dx=1, dy=1))
-            hessian = np.array([[dx2, dxdy], [dxdy, dy2]])
-            eigenvalues = np.linalg.eigvals(hessian)
-            if np.all(eigenvalues > 0) or np.all(eigenvalues < 0):
-                continue
-
-            # Nearest point
-            ix = np.abs(xs - x).argmin()
-            iy = np.abs(ys - y).argmin()
-
-            saddle_check_list[ix, iy] = 1
-
-    return saddle_check_list.flatten()
-
-
-def _check_saddle_2d_without_spline_fit(energies: np.ndarray, num_dim1, num_dim2) -> np.ndarray:
-
-    _energies = energies.reshape((num_dim1, num_dim2))
-    saddle_check_list = np.full_like(_energies, 0, dtype=int)
-
-    for x in range(1, num_dim1 - 1):
-        for y in range(1, num_dim2 - 1):
-            num_min = 0
-            num_max = 0
-            num_slope = 0
-
-            for v1, v2, v3 in [(_energies[x - 1, y - 1], _energies[x, y], _energies[x + 1, y + 1]),
-                               (_energies[x - 1, y], _energies[x, y], _energies[x + 1, y]),
-                               (_energies[x - 1, y + 1], _energies[x, y], _energies[x + 1, y - 1]),
-                               (_energies[x, y - 1], _energies[x, y], _energies[x, y + 1])]:
-                if v1 < v2 and v3 < v2:
-                    num_max += 1
-                elif v1 > v2 and v3 > v2:
-                    num_min += 1
-                else:
-                    num_slope += 1
-
-            if num_min > 0 and num_max > 0:
-                saddle_check_list[x, y] = 1
-
-    return saddle_check_list.flatten()
