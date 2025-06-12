@@ -162,6 +162,7 @@ class XTBScanApp(wx.App):
 
     # initialization
     def OnInit(self):
+        self.locale = wx.Locale(wx.LANGUAGE_ENGLISH)
         self.resource: xrc.XmlResource = xrc.XmlResource('./wxgui/gui.xrc')
         self.init_frame()
 
@@ -239,6 +240,7 @@ class XTBScanApp(wx.App):
         self.button_view_save_selected: wx.Button = xrc.XRCCTRL(self.frame, 'button_view_save_selected')
         self.button_plot_result: wx.Button = xrc.XRCCTRL(self.frame, 'button_plot_result')
         self.checkbox_plot_annotation: wx.CheckBox = xrc.XRCCTRL(self.frame, 'checkbox_plot_annotation')
+        self.text_ctrl_grad_tol: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_grad_tol')
         self.button_plot_surface: wx.Button = xrc.XRCCTRL(self.frame, 'button_plot_surface')
         self.text_ctrl_log: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_log')
 
@@ -285,6 +287,7 @@ class XTBScanApp(wx.App):
         assert self.button_plot_result is not None
         assert self.checkbox_plot_annotation is not None
         assert self.button_plot_surface is not None
+        assert self.text_ctrl_grad_tol is not None
         assert self.text_ctrl_log is not None
 
     def set_events(self):
@@ -339,7 +342,8 @@ class XTBScanApp(wx.App):
         for header in ['Type', 'Atoms', 'Value']:
             self.list_ctrl_constrains.AppendColumn(header)
 
-        #
+        # Default value for grad_tol
+        self.text_ctrl_grad_tol.SetValue('{:f}'.format(config.CHECK_SADDLE2D_GRAD_TOL).rstrip('0'))
 
     def load_input_structure_file(self, file: Path):
         # check file type by suffix and convert Gaussian file to xyz
@@ -371,7 +375,7 @@ class XTBScanApp(wx.App):
         self.current_input_xyz_file = file.absolute()
 
         # Default job name
-        self.text_ctrl_job_name.SetValue(self.current_input_xyz_file.stem  + '_xtbscan')
+        self.text_ctrl_job_name.SetValue(self.current_input_xyz_file.stem + '_xtbscan')
 
     def load_result_csv_file(self, file: Path):
         self.text_ctrl_result_csv_file.SetValue(str(file.absolute()))
@@ -562,7 +566,17 @@ class XTBScanApp(wx.App):
     def on_button_plot_result(self, event):
         if self.current_result_csv_file is not None:
             annotation = self.checkbox_plot_annotation.GetValue()
-            view.plot_scan(self.current_result_csv_file, annotation=annotation)
+            try:
+                grad_tol = float(self.text_ctrl_grad_tol.GetValue())
+                assert grad_tol >= 0.0
+            except:
+                grad_tol = None
+            try:
+                num_cpus = int(self.text_ctrl_scan_cpus.GetValue().strip())
+                assert num_cpus >= 1
+            except:
+                num_cpus = None
+            view.plot_scan(self.current_result_csv_file, annotation=annotation, grad_tol=grad_tol, num_procs=num_cpus)
         else:
             self.logging('No result csv file.')
 
