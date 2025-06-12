@@ -6,6 +6,7 @@ XTB_OTHER_LIB_DIR = None  # in case other library directory (MinGW etc.) has  to
 
 # Use Scipy to check saddle point in 2d scan
 USE_SCIPY = True
+CHECK_SADDLE2D_GRAD_TOL = 0.001
 
 # Customization of plotting
 SCAN_PLOT_1D_WIDTH = 6
