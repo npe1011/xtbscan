@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from config import FLOAT, XYZ_FORMAT
+from config import XYZ_FORMAT
 
 
 def save_xyz_file(xyz_file: Union[str, Path], atoms: np.ndarray, coordinates: np.ndarray, title: str = '') -> None:
@@ -36,7 +36,7 @@ def read_single_xyz_file(xyz_file: Union[str, Path]) -> Tuple[np.ndarray, np.nda
         z = float(temp[3])
         atoms.append(atom)
         coordinates.append([x, y, z])
-    return np.array(atoms), np.array(coordinates, dtype=FLOAT)
+    return np.array(atoms), np.array(coordinates, dtype=float)
 
 
 def read_sequential_xyz_file(file: Union[str, Path]) -> Tuple[np.ndarray, np.ndarray, List[str]]:
@@ -78,13 +78,13 @@ def read_sequential_xyz_file(file: Union[str, Path]) -> Tuple[np.ndarray, np.nda
             y = float(temp[2])
             z = float(temp[3])
             coordinates.append([x, y, z])
-        coordinates_list.append(np.array(coordinates, dtype=FLOAT))
+        coordinates_list.append(np.array(coordinates, dtype=float))
 
     # Read atoms
     for line in data[2:2+num_atoms]:
         atoms.append(line.strip().split()[0].capitalize())
 
-    return np.array(atoms), np.array(coordinates_list, dtype=FLOAT), title_list
+    return np.array(atoms), np.array(coordinates_list, dtype=float), title_list
 
 
 def read_xtbscan_file(file: Union[str, Path]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -112,7 +112,7 @@ def read_xtbscan_file(file: Union[str, Path]) -> Tuple[np.ndarray, np.ndarray, n
         else:
             raise ValueError(str(file) + 'is not a valid xtbscan file. Energy value cannot be read.')
 
-    return atoms, coordinates_list, np.array(energy_list, dtype=FLOAT)
+    return atoms, coordinates_list, np.array(energy_list, dtype=float)
 
 
 def save_sequential_xyz_file(xyz_file: Union[str, Path],

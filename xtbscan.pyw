@@ -1,9 +1,10 @@
 import sys
 import os
 import csv
+import gc
 from threading import Thread
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 import wx
 from wx import xrc
@@ -14,20 +15,102 @@ import numpy as np
 APP_DIR = (os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(APP_DIR)
 import config
-from xtbscan import utils, view, xyzutils, convert, xtb
+from xtbscan import utils, view, xyzutils, convert, xtb, uma
 
 
 CalcEndEvent, EVT_CALC_END = wx.lib.newevent.NewEvent()
 
-VERSION = '1.2.0'
+VERSION = '1.3.0'
 
 
-class CalculationThread(Thread):
+class UMACalculationThread(Thread):
 
-    def __init__(self, input_xyz_file: Path, job_name: str, xtb_params: xtb.XTBParams,
-                 scans: List[xtb.XTBScan], constrains: List[xtb.XTBConstrain],
-                 force_constant: str, concerted: bool, keep_log: int,
-                 num_threads: int, memory_per_thread: str, parent_window: Any):
+    def __init__(self,
+                 input_xyz_file: Path,
+                 job_name: str,
+                 uma_params: uma.UMAParams,
+                 scans: List[uma.UMAScan],
+                 constrains: List[uma.UMAConstrain],
+                 concerted: bool,
+                 keep_log: int,
+                 num_threads: int,
+                 memory_per_thread: str,
+                 parent_window: Any):
+
+        Thread.__init__(self)
+        self.input_xyz_file = input_xyz_file
+        self.job_name = job_name
+        self.stop_file: Path = self.input_xyz_file.parent / (job_name + config.STOP_FILE_SUFFIX)
+        self.uma_params = uma_params
+        self.scans = scans
+        if len(scans) == 0:
+            self.calculation_type = 'opt'
+        else:
+            self.calculation_type = 'scan'
+        self.constrains = constrains
+        self.concerted = concerted
+        self.keep_log = keep_log
+        self.num_threads = num_threads
+        self.memory_per_thread = memory_per_thread
+        self.parent_window = parent_window
+        self.start()
+
+    def run(self):
+        if self.stop_file.exists():
+            self.stop_file.unlink()
+
+        calculator = None
+        try:
+            uma.setenv_uma(self.num_threads, self.memory_per_thread)
+
+            if config.UMA_USE_GPU:
+                device = 'cuda'
+            else:
+                device = 'cpu'
+            calculator = uma.get_uma_calculator(model_path=config.UMA_PARAM_PATH, device=device)
+
+            uma.umascan(input_xyz_file=self.input_xyz_file,
+                        job_name=self.job_name,
+                        calculator=calculator,
+                        uma_params=self.uma_params,
+                        scans=self.scans,
+                        constrains=self.constrains,
+                        concerted=self.concerted,
+                        keep_log=self.keep_log)
+        except Exception as e:
+            wx.PostEvent(self.parent_window, CalcEndEvent(job_name=self.job_name,
+                                                          job_dir=self.input_xyz_file.parent,
+                                                          calculation_type=self.calculation_type,
+                                                          success=False))
+            print(e.args)
+        else:
+            wx.PostEvent(self.parent_window, CalcEndEvent(job_name=self.job_name,
+                                                          job_dir=self.input_xyz_file.parent,
+                                                          calculation_type=self.calculation_type,
+                                                          success=True))
+        finally:
+            del calculator
+            gc.collect()
+
+
+    def terminate(self):
+        self.stop_file.touch(exist_ok=True)
+
+
+class XTBCalculationThread(Thread):
+
+    def __init__(self,
+                 input_xyz_file: Path,
+                 job_name: str,
+                 xtb_params: xtb.XTBParams,
+                 scans: List[xtb.XTBScan],
+                 constrains: List[xtb.XTBConstrain],
+                 force_constant: str,
+                 concerted: bool,
+                 keep_log: int,
+                 num_threads: int,
+                 memory_per_thread: str,
+                 parent_window: Any):
         Thread.__init__(self)
         self.input_xyz_file = input_xyz_file
         self.job_name = job_name
@@ -52,16 +135,21 @@ class CalculationThread(Thread):
             self.stop_file.unlink()
 
         try:
-            xtb.setenv(self.num_threads, self.memory_per_thread)
-            xtb.xtbscan(input_xyz_file=self.input_xyz_file, job_name=self.job_name, xtb_params=self.xtb_params,
-                        scans=self.scans, constrains=self.constrains, force_constant=self.force_constant,
-                        concerted=self.concerted, keep_log=self.keep_log)
-        except:
+            xtb.setenv_xtb(self.num_threads, self.memory_per_thread)
+            xtb.xtbscan(input_xyz_file=self.input_xyz_file,
+                        job_name=self.job_name,
+                        xtb_params=self.xtb_params,
+                        scans=self.scans,
+                        constrains=self.constrains,
+                        force_constant=self.force_constant,
+                        concerted=self.concerted,
+                        keep_log=self.keep_log)
+        except Exception as e:
             wx.PostEvent(self.parent_window, CalcEndEvent(job_name=self.job_name,
                                                           job_dir=self.input_xyz_file.parent,
                                                           calculation_type=self.calculation_type,
                                                           success=False))
-            raise
+            print(e.args)
         else:
             wx.PostEvent(self.parent_window, CalcEndEvent(job_name=self.job_name,
                                                           job_dir=self.input_xyz_file.parent,
@@ -175,7 +263,7 @@ class XTBScanApp(wx.App):
         self.current_result_xyz_coordinates: Optional[list] = None
 
         # calculation thread: None means vacant
-        self.calculation_thread: Optional[CalculationThread] = None
+        self.calculation_thread: Union[None, XTBCalculationThread, UMACalculationThread] = None
 
         return True
 
@@ -203,6 +291,7 @@ class XTBScanApp(wx.App):
         self.button_input_file: wx.Button = xrc.XRCCTRL(self.frame, 'button_input_file')
         self.button_view_input_structure: wx.Button = xrc.XRCCTRL(self.frame, 'button_view_input_structure')
         self.text_ctrl_job_name: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_job_name')
+
         self.checkbox_scan_concerted: wx.CheckBox = xrc.XRCCTRL(self.frame, 'checkbox_scan_concerted')
         self.list_ctrl_scans: wx.ListCtrl = xrc.XRCCTRL(self.frame, 'list_ctrl_scans')
         self.button_scan_remove: wx.Button = xrc.XRCCTRL(self.frame, 'button_scan_remove')
@@ -213,6 +302,7 @@ class XTBScanApp(wx.App):
         self.text_ctrl_scan_end: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_scan_end')
         self.text_ctrl_scan_num_step: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_scan_num_step')
         self.button_scan_get_current: wx.Button = xrc.XRCCTRL(self.frame, 'button_scan_get_current')
+
         self.list_ctrl_constrains: wx.ListCtrl = xrc.XRCCTRL(self.frame, 'list_ctrl_constrains')
         self.button_constrain_remove: wx.Button = xrc.XRCCTRL(self.frame, 'button_constrain_remove')
         self.button_constrain_add: wx.Button = xrc.XRCCTRL(self.frame, 'button_constrain_add')
@@ -220,11 +310,20 @@ class XTBScanApp(wx.App):
         self.text_ctrl_constrain_atoms: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_constrain_atoms')
         self.text_ctrl_constrain_value: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_constrain_value')
         self.button_constrain_get_current: wx.Button = xrc.XRCCTRL(self.frame, 'button_constrain_get_current')
+
+        self.notebook_method: wx.Notebook = xrc.XRCCTRL(self.frame, 'notebook_method')
+
         self.choice_xtb_method: wx.Choice = xrc.XRCCTRL(self.frame, 'choice_xtb_method')
         self.text_ctrl_xtb_charge: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_xtb_charge')
         self.text_ctrl_xtb_uhf: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_xtb_uhf')
         self.radio_box_xtb_solvation: wx.RadioBox = xrc.XRCCTRL(self.frame, 'radio_box_xtb_solvation')
         self.choice_xtb_solvent: wx.Choice = xrc.XRCCTRL(self.frame, 'choice_xtb_solvent')
+
+        self.text_ctrl_uma_charge: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_uma_charge')
+        self.text_ctrl_uma_mult: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_uma_mult')
+        self.text_ctrl_uma_fmax: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_uma_fmax')
+        self.text_ctrl_uma_max_cycles: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_uma_max_cycles')
+
         self.text_ctrl_force_constant: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_force_constant')
         self.text_ctrl_scan_cpus: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_scan_cpus')
         self.text_ctrl_scan_memory: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_scan_memory')
@@ -243,52 +342,6 @@ class XTBScanApp(wx.App):
         self.text_ctrl_grad_tol: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_grad_tol')
         self.button_plot_surface: wx.Button = xrc.XRCCTRL(self.frame, 'button_plot_surface')
         self.text_ctrl_log: wx.TextCtrl = xrc.XRCCTRL(self.frame, 'text_ctrl_log')
-
-        # Codes for checking objects
-        assert self.text_ctrl_input_file is not None
-        assert self.button_input_file is not None
-        assert self.button_view_input_structure is not None
-        assert self.text_ctrl_job_name is not None
-        assert self.checkbox_scan_concerted is not None
-        assert self.list_ctrl_scans is not None
-        assert self.button_scan_remove is not None
-        assert self.button_scan_add is not None
-        assert self.choice_scan_type is not None
-        assert self.text_ctrl_scan_atoms is not None
-        assert self.text_ctrl_scan_start is not None
-        assert self.text_ctrl_scan_end is not None
-        assert self.text_ctrl_scan_num_step is not None
-        assert self.button_scan_get_current is not None
-        assert self.list_ctrl_constrains is not None
-        assert self.button_constrain_remove is not None
-        assert self.button_constrain_add is not None
-        assert self.choice_constrain_type is not None
-        assert self.text_ctrl_constrain_atoms is not None
-        assert self.text_ctrl_constrain_value is not None
-        assert self.button_constrain_get_current is not None
-        assert self.choice_xtb_method is not None
-        assert self.text_ctrl_xtb_charge is not None
-        assert self.text_ctrl_xtb_uhf is not None
-        assert self.radio_box_xtb_solvation is not None
-        assert self.choice_xtb_solvent is not None
-        assert self.text_ctrl_force_constant is not None
-        assert self.text_ctrl_scan_cpus is not None
-        assert self.text_ctrl_scan_memory is not None
-        assert self.choice_keep is not None
-        assert self.button_run is not None
-        assert self.text_ctrl_result_csv_file is not None
-        assert self.button_result_csv_file is not None
-        assert self.button_view_result_xyz is not None
-        assert self.button_view_result_csv is not None
-        assert self.text_ctrl_view_result_number is not None
-        assert self.button_view_xyz_selected is not None
-        assert self.button_view_copy_selected is not None
-        assert self.button_view_save_selected is not None
-        assert self.button_plot_result is not None
-        assert self.checkbox_plot_annotation is not None
-        assert self.button_plot_surface is not None
-        assert self.text_ctrl_grad_tol is not None
-        assert self.text_ctrl_log is not None
 
     def set_events(self):
 
@@ -459,8 +512,13 @@ class XTBScanApp(wx.App):
 
     def on_button_view_result_csv(self, event):
         if self.current_result_csv_file is not None:
-
-            with self.current_result_csv_file.open(mode='r') as f:
+            if os.name == 'nt':
+                encoding = 'utf-8-sig'
+                newline = ''
+            else:
+                encoding = 'utf-8'
+                newline = '\n'
+            with self.current_result_csv_file.open(mode='r', encoding=encoding, newline=newline) as f:
                 reader = csv.reader(f)
                 csv_data = list(reader)[1:]
 
@@ -722,43 +780,15 @@ class XTBScanApp(wx.App):
                 return
 
         else:
+
+            if self.notebook_method.GetSelection() == 0:
+                calc_method = 'xtb'
+            else:
+                calc_method = 'uma'
+
             # Input xyz
             if self.current_input_xyz_file is None or self.current_input_xyz_coordinates is None:
                 self.logging('No input file.')
-                return
-
-            # Settings for calculation
-            # XTB Parameters
-            xtb_method = self.choice_xtb_method.GetStringSelection()
-            try:
-                xtb_charge = int(self.text_ctrl_xtb_charge.GetValue().strip())
-            except ValueError:
-                self.logging('Charge is not valid.')
-                return
-            try:
-                xtb_uhf = int(self.text_ctrl_xtb_uhf.GetValue().strip())
-                assert xtb_uhf >= 0
-            except:
-                self.logging('UHF is not valid.')
-                return
-            xtb_solvation = self.radio_box_xtb_solvation.GetStringSelection().lower()
-            if xtb_solvation == 'none':
-                xtb_solvation = None
-                xtb_solvent = ''
-            else:
-                xtb_solvent = self.choice_xtb_solvent.GetStringSelection().strip().lower()
-                if not xtb_solvent:
-                    self.logging('Solvent must be selected.')
-                    return
-            xtb_params = xtb.XTBParams(method=xtb_method, charge=xtb_charge, uhf=xtb_uhf,
-                                       solvation=xtb_solvation, solvent=xtb_solvent)
-
-            force_constant = self.text_ctrl_force_constant.GetValue().strip()
-            try:
-                _fc = float(force_constant)
-                assert _fc > 0.0
-            except:
-                self.logging('Force Constant is not valid. It should positive value (0.5, 1.0 etc.)')
                 return
 
             # cpus, memory, keep_log
@@ -778,6 +808,74 @@ class XTBScanApp(wx.App):
             else:
                 keep_log = 0
 
+            # XTB Parameters
+            if calc_method == 'xtb':
+                xtb_method = self.choice_xtb_method.GetStringSelection()
+                try:
+                    xtb_charge = int(self.text_ctrl_xtb_charge.GetValue().strip())
+                except ValueError:
+                    self.logging('Charge is not valid.')
+                    return
+                try:
+                    xtb_uhf = int(self.text_ctrl_xtb_uhf.GetValue().strip())
+                    assert xtb_uhf >= 0
+                except:
+                    self.logging('UHF is not valid.')
+                    return
+                xtb_solvation = self.radio_box_xtb_solvation.GetStringSelection().lower()
+                if xtb_solvation == 'none':
+                    xtb_solvation = None
+                    xtb_solvent = ''
+                else:
+                    xtb_solvent = self.choice_xtb_solvent.GetStringSelection().strip().lower()
+                    if not xtb_solvent:
+                        self.logging('Solvent must be selected.')
+                        return
+                xtb_params = xtb.XTBParams(method=xtb_method,
+                                           charge=xtb_charge,
+                                           uhf=xtb_uhf,
+                                           solvation=xtb_solvation,
+                                           solvent=xtb_solvent)
+
+                force_constant = self.text_ctrl_force_constant.GetValue().strip()
+                try:
+                    _fc = float(force_constant)
+                    assert _fc > 0.0
+                except:
+                    self.logging('Force Constant is not valid. It should positive value (0.5, 1.0 etc.)')
+                    return
+
+            # UMA Parameters
+            if calc_method == 'uma':
+                try:
+                    uma_charge = int(self.text_ctrl_uma_charge.GetValue().strip())
+                except ValueError:
+                    self.logging('Charge is not valid.')
+                    return
+                try:
+                    uma_mult = int(self.text_ctrl_uma_mult.GetValue().strip())
+                    assert uma_mult >= 1
+                except:
+                    self.logging('Multiplicity is not valid.')
+                    return
+                try:
+                    uma_fmax = float(self.text_ctrl_uma_fmax.GetValue().strip())
+                    assert uma_fmax > 0.0
+                except:
+                    self.logging('Fmax is not valid.')
+                    return
+                try:
+                    uma_max_cycles = int(self.text_ctrl_uma_max_cycles.GetValue().strip())
+                    assert uma_max_cycles > 0
+                except:
+                    self.logging('Max Cycles is not valid.')
+                    return
+
+                uma_params = uma.UMAParams(charge=uma_charge,
+                                           mult=uma_mult,
+                                           fmax=uma_fmax,
+                                           max_cycles=uma_max_cycles)
+
             # Scans
             scans = []
             for n in range(self.list_ctrl_scans.GetItemCount()):
@@ -793,7 +891,18 @@ class XTBScanApp(wx.App):
                     return
                 else:
                     atom_indices = utils.read_atom_list_string(atoms)
-                    scans.append(xtb.XTBScan(stype, atom_indices, start, end, int(num_step)))
+                    if calc_method == 'xtb':
+                        scans.append(xtb.XTBScan(stype, atom_indices, start, end, int(num_step)))
+                    elif calc_method == 'uma':
+                        scans.append(uma.UMAScan(stype, atom_indices, start, end, int(num_step)))
+
+            # Check concerted (scan steps must be the same for all scans)
+            concerted = self.checkbox_scan_concerted.IsChecked()
+            if concerted and len(scans) > 0:
+                num_step_list = [s.num_step for s in scans]
+                if len(set(num_step_list)) != 1:
+                    self.logging('Errors: All num steps must be same for concerted scan.')
+                    return
 
             # Constrains
             constrains = []
@@ -808,7 +917,10 @@ class XTBScanApp(wx.App):
                     return
                 else:
                     atom_indices = utils.read_atom_list_string(atoms)
-                    constrains.append(xtb.XTBConstrain(ctype, atom_indices, value))
+                    if calc_method == 'xtb':
+                        constrains.append(xtb.XTBConstrain(ctype, atom_indices, value))
+                    elif calc_method == 'uma':
+                        constrains.append(uma.UMAConstrain(ctype, atom_indices, value))
 
             # Job name (used for output file names)
             job_name = self.text_ctrl_job_name.GetValue().strip()
@@ -817,17 +929,29 @@ class XTBScanApp(wx.App):
                 self.text_ctrl_job_name.SetValue(job_name)
 
             # Start Calculation
-            self.calculation_thread = CalculationThread(input_xyz_file=self.current_input_xyz_file,
-                                                        job_name=job_name,
-                                                        xtb_params=xtb_params,
-                                                        scans=scans,
-                                                        constrains=constrains,
-                                                        force_constant=force_constant,
-                                                        concerted=self.checkbox_scan_concerted.IsChecked(),
-                                                        keep_log=keep_log,
-                                                        num_threads=num_cpus,
-                                                        memory_per_thread=memory_per_cpu,
-                                                        parent_window=self)
+            if calc_method == 'xtb':
+                self.calculation_thread = XTBCalculationThread(input_xyz_file=self.current_input_xyz_file,
+                                                               job_name=job_name,
+                                                               xtb_params=xtb_params,
+                                                               scans=scans,
+                                                               constrains=constrains,
+                                                               force_constant=force_constant,
+                                                               concerted=concerted,
+                                                               keep_log=keep_log,
+                                                               num_threads=num_cpus,
+                                                               memory_per_thread=memory_per_cpu,
+                                                               parent_window=self)
+            elif calc_method == 'uma':
+                self.calculation_thread = UMACalculationThread(input_xyz_file=self.current_input_xyz_file,
+                                                               job_name=job_name,
+                                                               uma_params=uma_params,
+                                                               scans=scans,
+                                                               constrains=constrains,
+                                                               concerted=concerted,
+                                                               keep_log=keep_log,
+                                                               num_threads=num_cpus,
+                                                               memory_per_thread=memory_per_cpu,
+                                                               parent_window=self)
 
             self.button_run.SetLabelText('Stop')
             self.logging('Calculation started: {}'.format(self.current_input_xyz_file))
@@ -922,7 +1046,7 @@ def constrain_validation(ctype: str, atoms: str, value: str, coordinates=None) -
     """
     errors = []
 
-    if ctype.lower() not in ['distance', 'angle', 'dihedral']:
+    if ctype.lower() not in ['atoms', 'distance', 'angle', 'dihedral']:
         errors.append('Type must be distance, angle, or dihedral.')
 
     try:

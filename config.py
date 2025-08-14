@@ -4,7 +4,11 @@ XTB_BIN = 'D:/programs/xtb-6.6.1/bin/xtb.exe'
 XTB_PARAM_DIR = 'D:/programs/xtb-6.6.1/share/xtb'
 XTB_OTHER_LIB_DIR = None  # in case other library directory (MinGW etc.) has  to be in path to run xtbscan.
 
-# Use Scipy to check saddle point in 2d scan
+# UMA parameter file full path
+UMA_PARAM_PATH = 'D:/programs/uma/uma-s-1p1.pt'
+UMA_USE_GPU = False
+
+# Use Scipy to check saddle point in 2d scan; and its settings
 USE_SCIPY = True
 CHECK_SADDLE2D_GRAD_TOL = 0.001
 
@@ -20,7 +24,6 @@ SCAN_PLOT_2D_COLOR = 'skyblue'
 SCAN_PLOT_2D_TS_COLOR = 'firebrick'
 
 # Constants (not necessary to edit)
-FLOAT = float
 JOULE_TO_KCAL = 2.390E-4
 HARTREE_TO_JOULE_PER_MOL = 2.6255E6
 HARTREE_TO_KCAL = 627.51

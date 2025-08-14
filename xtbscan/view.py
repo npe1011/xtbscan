@@ -1,3 +1,4 @@
+import os
 import csv
 from pathlib import Path
 import subprocess as sp
@@ -20,7 +21,13 @@ def plot_scan(csv_file: Union[str, Path], annotation: bool, grad_tol: Optional[f
     grad_tol: (only for 2D) float > recheck saddle point with this value. None > not check.
     """
     csv_file = Path(csv_file)
-    with csv_file.open(mode='r') as f:
+    if os.name == 'nt':
+        encoding = 'utf-8-sig'
+        newline = ''
+    else:
+        encoding = 'utf-8'
+        newline = '\n'
+    with csv_file.open(mode='r', encoding=encoding, newline=newline) as f:
         mode = f.readline().lower().split(',')[0].strip()
         if mode == '1d':
             _plot_scan_1d(csv_file, annotation=annotation)
@@ -34,7 +41,13 @@ def _plot_scan_1d(csv_file: Path, annotation: bool) -> None:
     energies = []
     parameters = []
     saddle_check_list = []
-    with csv_file.open(mode='r') as f:
+    if os.name == 'nt':
+        encoding = 'utf-8-sig'
+        newline = ''
+    else:
+        encoding = 'utf-8'
+        newline = '\n'
+    with csv_file.open(mode='r', encoding=encoding, newline=newline) as f:
         reader = csv.reader(f)
         for i, line in enumerate(reader):
             if i == 0:
@@ -79,7 +92,13 @@ def _plot_scan_2d(csv_file: Path, annotation: bool, grad_tol: Optional[float], n
     parameters2 = []
     saddle_check_list = []
     flag_2d = False
-    with csv_file.open(mode='r') as f:
+    if os.name == 'nt':
+        encoding = 'utf-8-sig'
+        newline = ''
+    else:
+        encoding = 'utf-8'
+        newline = '\n'
+    with csv_file.open(mode='r', encoding=encoding, newline=newline) as f:
         reader = csv.reader(f)
         for i, line in enumerate(reader):
             if i == 0:
@@ -140,7 +159,13 @@ def _plot_scan_2d(csv_file: Path, annotation: bool, grad_tol: Optional[float], n
 def _plot_scan_concerted(csv_file: Path, annotation: bool) -> None:
     energies = []
     saddle_check_list = []
-    with csv_file.open(mode='r') as f:
+    if os.name == 'nt':
+        encoding = 'utf-8-sig'
+        newline = ''
+    else:
+        encoding = 'utf-8'
+        newline = '\n'
+    with csv_file.open(mode='r', encoding=encoding, newline=newline) as f:
         reader = csv.reader(f)
         for i, line in enumerate(reader):
             if i <= 1:
@@ -182,7 +207,13 @@ def plot_surface(csv_file: Union[str, Path]) -> None:
     energies = []
     parameters1 = []
     parameters2 = []
-    with csv_file.open(mode='r') as f:
+    if os.name == 'nt':
+        encoding = 'utf-8-sig'
+        newline = ''
+    else:
+        encoding = 'utf-8'
+        newline = '\n'
+    with csv_file.open(mode='r', encoding=encoding, newline=newline) as f:
         reader = csv.reader(f)
         for i, line in enumerate(reader):
             if i == 0:
@@ -206,9 +237,9 @@ def plot_surface(csv_file: Union[str, Path]) -> None:
         pass
     ax = fig.add_subplot(111, projection='3d')
 
-    x1 = np.array(parameters1, dtype=config.FLOAT).reshape((num_dim1, num_dim2))
-    x2 = np.array(parameters2, dtype=config.FLOAT).reshape((num_dim1, num_dim2))
-    z = np.array(energies, dtype=config.FLOAT).reshape((num_dim1, num_dim2))
+    x1 = np.array(parameters1, dtype=float).reshape((num_dim1, num_dim2))
+    x2 = np.array(parameters2, dtype=float).reshape((num_dim1, num_dim2))
+    z = np.array(energies, dtype=float).reshape((num_dim1, num_dim2))
 
     ax.plot_surface(x1, x2, z, cmap=cm.coolwarm, linewidth=0, antialiased=False)
 

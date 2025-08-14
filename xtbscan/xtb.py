@@ -59,9 +59,14 @@ class XTBConstrain:
     def __init__(self, constrain_type: str, atom_indices: Union[np.ndarray, List[int]], value: Any = None):
 
         assert constrain_type in ['atoms', 'distance', 'angle', 'dihedral']
+        if constrain_type == 'distance':
+            assert len(atom_indices) == 2
+        if constrain_type == 'angle':
+            assert len(atom_indices) == 3
+        if constrain_type == 'dihedral':
+            assert len(atom_indices) == 4
 
         if constrain_type == 'atoms':
-            assert value is None
             self.value = None
         if constrain_type != 'atoms':
             if value is None:
@@ -70,13 +75,6 @@ class XTBConstrain:
                 self.value = 'auto'
             else:
                 self.value = str(value).strip()
-
-        if constrain_type == 'distance':
-            assert len(atom_indices) == 2
-        if constrain_type == 'angle':
-            assert len(atom_indices) == 3
-        if constrain_type == 'dihedral':
-            assert len(atom_indices) == 4
 
         self.constrain_type = constrain_type
         self.atom_indices = atom_indices
@@ -135,7 +133,7 @@ class XTBScan:
         return scan_string
 
     def get_values(self):
-        return np.linspace(float(self.start), float(self.end), int(self.num_step), endpoint=True, dtype=config.FLOAT)
+        return np.linspace(float(self.start), float(self.end), int(self.num_step), endpoint=True, dtype=float)
 
     def calc_real_value(self, coordinates: np.ndarray) -> float:
         if self.scan_type == 'distance':
@@ -147,10 +145,11 @@ class XTBScan:
         else:
             raise RuntimeError('unknown type of scan.')
 
-    def get_print_name(self, atoms=None):
-        if atoms is None:
-            atoms = np.full('Atom', max(self.atom_indices) + 2)
-        name = self.scan_type + ' ' + '-'.join([atoms[i].capitalize() + str(i + 1) for i in self.atom_indices])
+    def get_print_name(self, atom_symbols=None):
+        if atom_symbols is None:
+            name = self.scan_type + ' unk.'
+        else:
+            name = self.scan_type + ' ' + '-'.join([atom_symbols[i].capitalize() + str(i + 1) for i in self.atom_indices])
         unit = ' (ang.)' if self.scan_type == 'distance' else ' (deg.)'
         return name + unit
 
@@ -169,7 +168,7 @@ def xtbscan(input_xyz_file: Union[str, Path],
 
     # initial check
     if not CHECK_SETENV:
-        setenv(num_threads=1, memory_per_thread='500M')
+        setenv_xtb(num_threads=1, memory_per_thread='500M')
     input_xyz_file = Path(input_xyz_file).absolute()
     if not input_xyz_file.exists():
         raise FileNotFoundError(str(input_xyz_file) + ' not found.')
@@ -394,7 +393,7 @@ def _scan2d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
                 assigned_value_list2.append(scan2_value_list[k2])
                 real_value_list1.append(scan1.calc_real_value(coordinates_list_2d[k1][k2]))
                 real_value_list2.append(scan2.calc_real_value(coordinates_list_2d[k1][k2]))
-        energy_list = np.array(energy_list, dtype=config.FLOAT)
+        energy_list = np.array(energy_list, dtype=float)
         relative_energy_list = (energy_list - np.min(energy_list)) * config.HARTREE_TO_KCAL
 
         # check saddle. grad_tol > default value in config
@@ -517,7 +516,7 @@ def _scan_concerted(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
             shutil.rmtree(workdir, ignore_errors=True)
 
 
-def setenv(num_threads: int = 1, memory_per_thread: Optional[str] = None) -> None:
+def setenv_xtb(num_threads: int = 1, memory_per_thread: Optional[str] = None) -> None:
     assert int(num_threads) > 0
     num_threads = str(int(num_threads))
 

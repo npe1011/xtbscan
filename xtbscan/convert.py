@@ -8,7 +8,7 @@ except ImportError:
 else:
     CCLIB = True
 
-from config import ATOM_LIST, FLOAT
+from config import ATOM_LIST
 from xtbscan import xyzutils
 
 
@@ -105,7 +105,7 @@ def gaussian_log_to_xyz(file: Path) -> Path:
             i = i + 1
 
     atoms = np.array(atoms)
-    coordinates = np.array(coordinates, dtype=FLOAT)
+    coordinates = np.array(coordinates, dtype=float)
     output_file = file.parent / (file.stem + '.xyz')
     xyzutils.save_xyz_file(output_file, atoms, coordinates, 'structure read from gaussian log file')
 
