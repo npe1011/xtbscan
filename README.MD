@@ -4,6 +4,7 @@
   - [1. はじめに](#1-はじめに)
     - [1.1. 概要](#11-概要)
     - [1.2. 更新履歴](#12-更新履歴)
+      - [2025/8/14](#2025814)
       - [2024/10/24](#20241024)
       - [2024/10/18](#20241018)
       - [2024/9/6](#202496)
@@ -11,10 +12,12 @@
   - [2. 動作条件と起動](#2-動作条件と起動)
     - [2.1. 動作確認環境](#21-動作確認環境)
     - [2.2. xTBの準備と設定](#22-xtbの準備と設定)
+    - [2.3. uma/omol25の準備と設定](#23-umaomol25の準備と設定)
   - [3. 使い方](#3-使い方)
     - [3.1. 起動](#31-起動)
     - [3.2. 初期構造ファイルの準備と読み込み : Input XYZ](#32-初期構造ファイルの準備と読み込み--input-xyz)
-    - [3.3. 計算条件の設定 : XTB Settings](#33-計算条件の設定--xtb-settings)
+    - [3.3.1 計算条件の設定（XTBの場合）](#331-計算条件の設定xtbの場合)
+    - [3.3.2 計算条件の設定（UMAの場合）](#332-計算条件の設定umaの場合)
     - [3.4. Scanの設定 : Scan Conditions](#34-scanの設定--scan-conditions)
     - [3.4. その他のパラメータの固定 : Constrain Conditions](#34-その他のパラメータの固定--constrain-conditions)
     - [3.5. 計算の実行](#35-計算の実行)
@@ -26,9 +29,15 @@
 
 ### 1.1. 概要
 
-GrimmeのxTBを利用して、いわゆるScan (reluxed scan)をWindows上のGUIで実行・解析するツールです。1次元、2次元のscanと複数パラメータのconcerted scanができます。
+GrimmeのxTB、または uma/omol25 (ASE+torch+fairchem-core) を利用して、いわゆるScan (reluxed scan)をWindows上のGUIで実行・解析するツールです。1次元、2次元のscanと複数パラメータのconcerted scanができます。
 
 ### 1.2. 更新履歴
+
+#### 2025/8/14
+- uma/omol25 (ASE利用) による計算機能を追加。
+- 原子座標の固定（constrain: atoms）を追加。ただ他と組み合わせたときの挙動はあまりよくなさそう（非推奨）。
+- 計算を止めたときの挙動を微妙に変更。
+- 細かいリファクタリングとCSVの文字コードのデフォルトを変更（WindowsではBOM付きUTF-8）。
 
 #### 2024/10/24
 - 2D Scanの鞍点判定をplot時に基準を変えて再実行できるように変更。一部処理を並列化して少しだけ速くしました。
@@ -48,18 +57,29 @@ GrimmeのxTBを利用して、いわゆるScan (reluxed scan)をWindows上のGUI
 
 ### 2.1. 動作確認環境
 - Windows 11
-- Python 3.8
-- wxpython 4.1.1
-- numpy 1.22.2
-- scipy 1.8.0
-- cclib 1.7.2
-- matplotlib 3.5.1
+- Python 3.12.8
 - xtb-6.6.1 for Windows
+- wxPython==4.2.2
+- numpy==2.2.1
+- scipy==1.15.0
+- cclib==1.8.1
+- matplotlib==3.10.0
+
+uma/omol25の動作に利用しているのは下記の通り
+- ase==3.26.0
+- torch==2.6.0
+- fairchem-core==2.3.0
   
 ```
 python -m pip install wxpython cclib matplotlib scipy
 ```
 で雑に動くと思います。Pythonが古いとエラーがでるかもしれません。
+
+uma/omol25 (CPU利用) を使うときは、下記のとおりです。GPUを使いたい人はがんばってtorch==2.6.0のGPU版を入れてください。
+（Windowsで正常に動くかは確認していません）
+```
+python -m pip install torch==2.6.0 fairchem-core==2.3.0
+```
 
 ### 2.2. xTBの準備と設定
 https://github.com/grimme-lab/xtb の右側のreleaseからWindows用のバイナリをダウンロードして適当な場所に置きます。ここでは　`D:\programs\xtb-6.6.1` においたものとします。
@@ -82,6 +102,15 @@ USE_SCIPY = True
 CHECK_SADDLE2D_GRAD_TOL = 0.001
 ```
 
+### 2.3. uma/omol25の準備と設定
+HuggingFaceユーザー登録パラメータファイルを [https://huggingface.co/facebook/UMA] からダウンロードしてきて（登録が必要）適当な場所においてください。計算コストを考えるとsmallモデルがよいと思います。（強いGPU環境があればmedium）
+
+`config.py` の下記部分でそのパラメータファイルのフルパスを指定してください。GPU環境があって利用したい人は下の値をTrueにします。
+```
+UMA_PARAM_PATH = 'D:/programs/uma/uma-s-1p1.pt'
+UMA_USE_GPU = False
+
+```
 ## 3. 使い方
 
 ### 3.1. 起動
@@ -99,12 +128,17 @@ CHECK_SADDLE2D_GRAD_TOL = 0.001
 - 上記の場合、同名の古いファイルは上書きされるので注意してください。
 
 
-### 3.3. 計算条件の設定 : XTB Settings
+### 3.3.1 計算条件の設定（XTBの場合）
 
 - Methodは計算パラメータです。通常はgfn2でよいです。
 - chargeは電荷、UHFは不対電子の数で閉殻なら0、ラジカルなら1 etc.です。Gaussianとかの多重度と指定がちょっと違うので注意。
 - SolvationはALPBとGBSAがありますが、とりあえずやるならALPBでいいと思います（新しい方）。
-- Forceはscanやconstrainの強さです。通常は1.0のままでいいです。完全にパラメータをfixせずに、強いポテンシャルで束縛してscanします。
+- Forceはscanやconstrainの強さです。通常は1.0のままでいいです。xtbでは完全にパラメータをfixせずに、強いポテンシャルで束縛してscanします。
+
+### 3.3.2 計算条件の設定（UMAの場合）
+
+- Chargeは電荷、Multiplicityは通常のスピン多重度です。(GaussianやORCAと同じ)
+- Fmaxは構造最適化のときの収束条件（小さいほど厳しい）、Max Cyclesは構造最適化の最大ステップ数です。
 
 ### 3.4. Scanの設定 : Scan Conditions
 
@@ -117,12 +151,14 @@ CHECK_SADDLE2D_GRAD_TOL = 0.001
 - 条件1つだと1次元、2つだと2次元になります。3次元以上はできません。
 - concerted mode のチェックを入れるとconcerted scanになります。この場合は複数のパラメータを同期的に変化させて1次元のscanをおこないます。この場合は3つ以上のパラメータの変化もできます。ただし全ての条件でNum Stepを同じ数にする必要があります。
 - なおscanを1つも入れないで実行すると単純な構造最適化がおこなわれます。
+- xtbの場合はxtbバイナリの機能でscanを実行していて、uma/omol25の場合はASEのconstrain付き構造最適化を繰り返す形で実行しているため、挙動が異なる可能性が高いです。
 
 
 ### 3.4. その他のパラメータの固定 : Constrain Conditions
 
 - Scan以外のパラメータ（距離・角度・二面角）を固定できます。
 - 現在値で固定するときは、currentで取得してもいいですが、auto としてもよいです（これはscanのほうではでききません）。
+- あまり複雑な拘束・Scanの組み合わせはテストしていません。またatomsの拘束は他と組み合わせるとあまり正しくうごかなそうです（特にUMAの場合）。
 
 ### 3.5. 計算の実行
 
