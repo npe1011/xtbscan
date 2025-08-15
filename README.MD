@@ -1,61 +1,73 @@
-# XTB PES Scan Tool with GUI
+# GUI Tool for PES Scan with xTB or uma/omol25
 
-- [XTB PES Scan Tool with GUI](#xtb-pes-scan-tool-with-gui)
-  - [1. はじめに](#1-はじめに)
-    - [1.1. 概要](#11-概要)
-    - [1.2. 更新履歴](#12-更新履歴)
+- [GUI Tool for PES Scan with xTB or uma/omol25](#gui-tool-for-pes-scan-with-xtb-or-umaomol25)
+  - [1. Introduction](#1-introduction)
+    - [1.1. Overview](#11-overview)
+    - [1.2. Update History](#12-update-history)
       - [2025/8/14](#2025814)
       - [2024/10/24](#20241024)
       - [2024/10/18](#20241018)
       - [2024/9/6](#202496)
       - [2022/11/11](#20221111)
-  - [2. 動作条件と起動](#2-動作条件と起動)
-    - [2.1. 動作確認環境](#21-動作確認環境)
-    - [2.2. xTBの準備と設定](#22-xtbの準備と設定)
-    - [2.3. uma/omol25の準備と設定](#23-umaomol25の準備と設定)
-  - [3. 使い方](#3-使い方)
-    - [3.1. 起動](#31-起動)
-    - [3.2. 初期構造ファイルの準備と読み込み : Input XYZ](#32-初期構造ファイルの準備と読み込み--input-xyz)
-    - [3.3.1 計算条件の設定（XTBの場合）](#331-計算条件の設定xtbの場合)
-    - [3.3.2 計算条件の設定（UMAの場合）](#332-計算条件の設定umaの場合)
-    - [3.4. Scanの設定 : Scan Conditions](#34-scanの設定--scan-conditions)
-    - [3.4. その他のパラメータの固定 : Constrain Conditions](#34-その他のパラメータの固定--constrain-conditions)
-    - [3.5. 計算の実行](#35-計算の実行)
-    - [3.6. 計算結果の可視化](#36-計算結果の可視化)
-    - [4. その他](#4-その他)
+  - [2. Requirements and Launch](#2-requirements-and-launch)
+    - [2.1. Tested Environment](#21-tested-environment)
+    - [2.2. Setup and configuration of xTB](#22-setup-and-configuration-of-xtb)
+    - [2.3. Setup and configuration of uma/omol25](#23-setup-and-configuration-of-umaomol25)
+  - [3. Usage](#3-usage)
+    - [3.1. Launch](#31-launch)
+    - [3.2. Load Initial Structure File: Input XYZ](#32-load-initial-structure-file-input-xyz)
+    - [3.3.1 Setting Calculation Conditions (XTB)](#331-setting-calculation-conditions-xtb)
+    - [3.3.2 Setting Calculation Conditions (UMA)](#332-setting-calculation-conditions-uma)
+    - [3.4. Setting Scan Conditions](#34-setting-scan-conditions)
+    - [3.4. Additional Parameter Fixing: Constrain Conditions](#34-additional-parameter-fixing-constrain-conditions)
+    - [3.5. Run Calculations](#35-run-calculations)
+    - [3.6. Visualize Results](#36-visualize-results)
+  - [4. Other Notes](#4-other-notes)
 
 
-## 1. はじめに
+## 1. Introduction
 
-### 1.1. 概要
+### 1.1. Overview
 
-GrimmeのxTB、または uma/omol25 (ASE+torch+fairchem-core) を利用して、いわゆるScan (reluxed scan)をWindows上のGUIで実行・解析するツールです。1次元、2次元のscanと複数パラメータのconcerted scanができます。
+This is a Windows GUI tool for performing and analyzing so-called Scan
+(relaxed scan) calculations using Grimme's xTB or uma/omol25 (ASE +
+torch + fairchem-core). It supports 1D and 2D scans, as well as
+multi-parameter concerted scans.
 
-### 1.2. 更新履歴
+### 1.2. Update History
 
 #### 2025/8/14
-- uma/omol25 (ASE利用) による計算機能を追加。
-- 原子座標の固定（constrain: atoms）を追加。ただ他と組み合わせたときの挙動はあまりよくなさそう（非推奨）。
-- 計算を止めたときの挙動を微妙に変更。
-- 細かいリファクタリングとCSVの文字コードのデフォルトを変更（WindowsではBOM付きUTF-8）。
+
+- Added: Calculation wiht uma/omol25 (via ASE).
+- Added: fix atomic coordinates (constraint: atoms).
+  This function does not always work well especially when combined with other constrains (not recommended).
+- Fixed: Behavior when stopping calculations.
+- Changed: the default CSV encoding (BOM-UTF-8 on Windows).
 
 #### 2024/10/24
-- 2D Scanの鞍点判定をplot時に基準を変えて再実行できるように変更。一部処理を並列化して少しだけ速くしました。
+
+- Modified: 2D scan saddle point detection is re-performed with
+  different thresholds when plotting. This is partially parallelized..
 
 #### 2024/10/18
-- 2D Scanの鞍点判定をscipyのspline fitを利用する方法に変更。やや処理が重くなり、以前よりまともな判定がでるように。
+
+- Changed: 2D scan saddle point detection now uses SciPy's spline fit.
+  More reliable results are obtained than before but it takes a longer time.
 
 #### 2024/9/6
-- リファクタリング + GUIデザインの変更
-- cclibを利用した読み込みを追加
-- xyzファイルをインプットとして読んだとき、最後の構造を利用するように動作を変更。
+
+- Changed: GUI design and refactoring
+- Added: reading input files other than Gaussian or xyz. 
+- Changed: When reading xyz files as input, the last structure is used, instead of the first one.
 
 #### 2022/11/11
-- とりあえず完成
 
-## 2. 動作条件と起動
+- Initial version
 
-### 2.1. 動作確認環境
+## 2. Requirements and Launch
+
+### 2.1. Tested Environment
+
 - Windows 11
 - Python 3.12.8
 - xtb-6.6.1 for Windows
@@ -65,27 +77,33 @@ GrimmeのxTB、または uma/omol25 (ASE+torch+fairchem-core) を利用して、
 - cclib==1.8.1
 - matplotlib==3.10.0
 
-uma/omol25の動作に利用しているのは下記の通り
+For uma/omol25,
 - ase==3.26.0
 - torch==2.6.0
 - fairchem-core==2.3.0
-  
+
 ```
 python -m pip install wxpython cclib matplotlib scipy
 ```
-で雑に動くと思います。Pythonが古いとエラーがでるかもしれません。
 
-uma/omol25 (CPU利用) を使うときは、下記のとおりです。GPUを使いたい人はがんばってtorch==2.6.0のGPU版を入れてください。
-（Windowsで正常に動くかは確認していません）
+may work. Errors may occur with older Python versions.
+
+When using uma/omol25 (CPU mode), also install as following.
+
 ```
 python -m pip install torch==2.6.0 fairchem-core==2.3.0
 ```
 
-### 2.2. xTBの準備と設定
-https://github.com/grimme-lab/xtb の右側のreleaseからWindows用のバイナリをダウンロードして適当な場所に置きます。ここでは　`D:\programs\xtb-6.6.1` においたものとします。
-また適当な分子構造ビューワを用意します。
+If you want GPU support, install the GPU version of torch==2.6.0 by yourself (not tested).
 
-xtbscanフォルダの `config.py` をテキストエディタで開き、上のほうにあるいくつかのパラメータを自分の環境に合わせて書き換えます。
+
+### 2.2. Setup and configuration of xTB
+
+Download the Windows binary from the "release" at
+https://github.com/grimme-lab/xtb and place it in a suitable directory.
+Here we assume `D:\programs\xtb-6.6.1`. Also setup a suitable molecular viewer (jmol recommended).
+
+Open `config.py` in the xtbscan folder with a text editor and update the parameters to match your environment.
 
 ```
 VIEWER_PATH = 'D:/programs/jmol/jmol.bat'
@@ -93,102 +111,114 @@ XTB_BIN = 'D:/programs/xtb-6.6.1/bin/xtb.exe'
 XTB_PARAM_DIR = 'D:/programs/xtb-6.6.1/share/xtb'
 ```
 
-また下記をFalseにすると、2D　Scanの鞍点の判定にscipyを使わなくなります (以前の適当な方法に戻す)。
-その場合scipyはインストールしなくてもよいです。
-その下のパラメータは鞍点判定時の厳しさ（小さいほど厳しい）のデフォルト値です。
+To disable SciPy-based saddle point detection in 2D scans, set the following to False.
+In that case, SciPy is not required. The next parameter is the default criterion for saddle detection (smaller is
+stricter):
+
 ```
-# Use Scipy to check saddle point in 2d scan
 USE_SCIPY = True
 CHECK_SADDLE2D_GRAD_TOL = 0.001
 ```
 
-### 2.3. uma/omol25の準備と設定
-HuggingFaceユーザー登録パラメータファイルを [https://huggingface.co/facebook/UMA] からダウンロードしてきて（登録が必要）適当な場所においてください。計算コストを考えるとsmallモデルがよいと思います。（強いGPU環境があればmedium）
+### 2.3. Setup and configuration of uma/omol25
 
-`config.py` の下記部分でそのパラメータファイルのフルパスを指定してください。GPU環境があって利用したい人は下の値をTrueにします。
+Download the parameter file from HuggingFace from [https://huggingface.co/facebook/UMA\] (registration required) and place it in a suitable location.
+The small model is recommended. A high-performance GPU might allow the use of the medium model.
+
+Specify the full path to the parameter file in `config.py`.
+Set the following variable to True if you have a GPU environment and want to use it:
+
 ```
 UMA_PARAM_PATH = 'D:/programs/uma/uma-s-1p1.pt'
 UMA_USE_GPU = False
-
 ```
-## 3. 使い方
 
-### 3.1. 起動
+## 3. Usage
 
-`xtbscan.pyw` を実行します。
+### 3.1. Launch
 
-### 3.2. 初期構造ファイルの準備と読み込み : Input XYZ
+Just run `xtbscan.pyw`.
 
-- ファイルの読み込みはファイルをドラッグアンドドロップするか左上の ... ボタンから読み込みます。
-- 初期構造ファイルは xyz、Gaussian Job/Log ファイル、もしくはcclib [https://cclib.github.io/] で読み込めるファイルが利用できます。
-- 拡張子が gjf/com/log/out のものはGaussianファイルとして、xyz のものは xyzファイルとして処理します。それ以外はclibでそのまま読みこみます。
-- 複数構造があるファイルなどの場合はいずれも最後の構造が利用されます。
-- xyzファイル以外の場合、対応するxyzファイルが自動で作成されて初期構造ファイルとしてセットされます。
-- 複数構造があるxyzファイルの場合、name_last.xyzというファイルが自動で作成されて初期構造ファイルとしてセットされます。
-- 上記の場合、同名の古いファイルは上書きされるので注意してください。
+### 3.2. Load Initial Structure File: Input XYZ
 
+- Load a file by dropping it or by using the top-left `...` button.
+- An initial structure file can be xyz, Gaussian Job/Log files, or any
+  file readable via cclib [https://cclib.github.io/].
+- Files with extensions gjf/com/log/out are treated as Gaussian files;
+  xyz files are treated as xyz; all others are read with cclib.
+- If multiple structures are present in the file, the last structure is used.
+- When reading Non-xyz input files, the corresponding xyz file is automatically generated and set as the input file.
+- For multi-structure xyz files, a `name_last.xyz` file is generated and used.
+- In these cases, a file with the same name will be overwritten.
 
-### 3.3.1 計算条件の設定（XTBの場合）
+### 3.3.1 Setting Calculation Conditions (XTB)
 
-- Methodは計算パラメータです。通常はgfn2でよいです。
-- chargeは電荷、UHFは不対電子の数で閉殻なら0、ラジカルなら1 etc.です。Gaussianとかの多重度と指定がちょっと違うので注意。
-- SolvationはALPBとGBSAがありますが、とりあえずやるならALPBでいいと思います（新しい方）。
-- Forceはscanやconstrainの強さです。通常は1.0のままでいいです。xtbでは完全にパラメータをfixせずに、強いポテンシャルで束縛してscanします。
+- `Method`: xtb parameters. `gfn2` is generally recommended. Some transition metal complexes favors `gfn1`. 
+- `Charge`: Total charge.
+- `UHF`: The number of unpaired electrons (0 for closed-shell, 1 for simple radical, etc.). This is different from spin multiplicity specification used in Gaussian or ORCA.
+- `Solvation`: ALPB or GBSA; ALPB (newer) is recommended if implicit solvation is necessary.
+- `force`: The constraint force (default 1.0). With xTB, geometrical parameters are not full fixed but constrained with a strong potential. Not necessary to change in most cases.
 
-### 3.3.2 計算条件の設定（UMAの場合）
+### 3.3.2 Setting Calculation Conditions (UMA)
 
-- Chargeは電荷、Multiplicityは通常のスピン多重度です。(GaussianやORCAと同じ)
-- Fmaxは構造最適化のときの収束条件（小さいほど厳しい）、Max Cyclesは構造最適化の最大ステップ数です。
+- `Charge`: Total charge.
+- `Multiplicity`: Spin multiplicity (same as Gaussian or ORCA).
+- `Fmax`: Optimization convergence threshold (smaller is stricter)
+- `Max Cycles`: The maximum steps of optimization.
 
-### 3.4. Scanの設定 : Scan Conditions
+### 3.4. Setting Scan Conditions
 
-- 2原子間の距離 (distance)、3原子の角度（angle）、4原子の二面角（dihedral）でscanできます。
-- 右に条件を打ち込んでAddボタンを押すと表に追加されます。
-- Atomsはスペースかカンマで区切って入力してください(1スタートの番号順です)。
-- Start/End/Num Stepは、初期値、最終値、ステップ数です。
-- 初期構造ファイルをあらかじめ読み込んでおくと、左上のviewボタンでviewerを開いて作業できるのでよいです。
-- 構造を読み込んだ状態でcurrentを押すと現在値がStartに入ります。
-- 条件1つだと1次元、2つだと2次元になります。3次元以上はできません。
-- concerted mode のチェックを入れるとconcerted scanになります。この場合は複数のパラメータを同期的に変化させて1次元のscanをおこないます。この場合は3つ以上のパラメータの変化もできます。ただし全ての条件でNum Stepを同じ数にする必要があります。
-- なおscanを1つも入れないで実行すると単純な構造最適化がおこなわれます。
-- xtbの場合はxtbバイナリの機能でscanを実行していて、uma/omol25の場合はASEのconstrain付き構造最適化を繰り返す形で実行しているため、挙動が異なる可能性が高いです。
+- You can scan distances (2 atoms), angles (3 atoms), and dihedrals (4 atoms).
+- Enter parameters and click `Add` to add them to the table.
+- Atoms are indexed from 1, separated by spaces or commas.
+- `Start`/`End`/`Num Step` specify the initial value, final value, and the number of scan steps.
+- With a structure loaded, you can click `view` button to open the viewer, which helps to input atom indices.
+- Click `current` with a loaded structure sets `Start` with the current value.
+- One condition: 1D scan, Two conditions: 2D scan. 3D or higher dimension scans are not possible.
+- Checking `concerted mode` enables concerted scans, where multiple geometrical parameters change synchronously
+  in a 1D scan. `Num Step` must be identical for all scan paramters.
+- If no scan conditions are given, a simple geometry optimization is performed.
+- With xTB, scans are run via the built-in function of the xTB binary.
+  With uma/omol25, scans are done by repeated ASE constraint optimizations, so behaviors may differ.
 
+### 3.4. Additional Parameter Fixing: Constrain Conditions
 
-### 3.4. その他のパラメータの固定 : Constrain Conditions
+- Additional geometrical parameters can be fixed.
+- For fixing at the current value, you can use current or auto (auto is not available in scan settings).
+- Complex constraint/scan combinations are not well tested. Atoms constraints may not work when combined with
+  other scan or constraints (especially when u UMA).
 
-- Scan以外のパラメータ（距離・角度・二面角）を固定できます。
-- 現在値で固定するときは、currentで取得してもいいですが、auto としてもよいです（これはscanのほうではでききません）。
-- あまり複雑な拘束・Scanの組み合わせはテストしていません。またatomsの拘束は他と組み合わせるとあまり正しくうごかなそうです（特にUMAの場合）。
+### 3.5. Run Calculations
 
-### 3.5. 計算の実行
+- Set `CPUs` and `Memory per CPU`, then click `Run`.
+- `CPUs` should equal or be less than physical CPU cores (e.g., max 4 for 4-core/8-thread CPUs).
+- Total Memory usage = input memory × CPU cores.
+- `Keep Log` specifies whether to keep intermediate xTB or ASE optimization logs. `When fail` keeps them only on error termination.
+- Click `Run` to start. Click `Stop` to cancel (cannot resume from partial progress).
 
-- cpus と memory per cpu を設定して Runを押すと実行されます。
-- cpus はパソコンのCPUの物理コア数以下を指定すると良いです (4コア8スレッドなら最大4など)。
-- メモリは最高でこの入力 x 利用CPUコア数 になるので、適当に入れてください。
-- keep logはxtbの中間ログファイルを残すかどうかです。when failは、エラーがでて失敗したときだけ残します。
-- Runを押すと計算がはじまります。実行中にStopを押すとキャンセルされます。途中から続行はできませんので、完全に中止になります。
+### 3.6. Visualize Results
 
+- When performing simple optimization, only a optimized structure xyz file is given. 
+- When successful termination of scans, you are asked whether to load results.
+- When the results loaded, the CSV file name appears in the top-right CSV text field.
+- Results are saved as `JOBNAME.csv` (energies) and `JOBNAME.xyz` (structures).
+- Previous results can be loaded by opening CSV files (drag-and-drop).
+- Buttons under the CSV field allow visualization:
+  - `view (all)`: open all structures with the viewer.
+  - `show table`: display the CSV contents in a table. You can also see the file with Excel or other softwares.
+  - Specify a sacn step number and the click `view` or `copy` or `save` to see the structure, copy the coordinates to clipboard, or save as a file.
+  - `plot`: Plot scaned parameter/energy graphs (1D scan: normal graph, 2D: 3D graph). The energies are given as the relative values in kcal/mol.
+  - `annotation`: Add structure number labels when plotting.
+    Saddle-like points are shown as red points.
+    In 1D scans, red points are just local maxima.
+    In 2D scans, spline fitting and gradient/Hessian-based saddle detection is performed (if USE_SCIPY=True).
+    In 2D scans, you can re-run saddle detection with a custom `grad. tol.` when plotting.
+  - `surface`: shows PES-like surface for 2D scans.
+  - `grad. tol.` is a scaled value without physical units.
 
-### 3.6. 計算結果の可視化
+## 4. Other Notes
 
-- 計算が正常に終わるとメッセージボックスが出てきて、結果をロードするか聞かれます（scanでない最適化の場合は聞かれません）
-- ロードすると、左下のCSVファイルのところにファイル名が読み込まれます。
-- 計算結果はインプットファイル名を `JOB.xyz` とすると、`JOB_xtbscan.csv` と `JOB_xtbscan.xyz` に出力されます。エネルギーの情報はCSV、構造情報はXYZファイルに書かれています。
-- 過去の計算結果も、CSVファイルをロードすれば読み込めます。CSVファイルをドラッグアンドドロップしてもよいです。
-- CSVを読み込んだ上で、その下の各ボタンを押すと可視化ができます。
-- view (all) は全ての構造のXYZファイルをビューワで開きます。
-- show table はCSVの中身をテーブルで表示します。普通のCSVなのでエクセルで読んでも読めます。
-- 特定の番号の構造を見るときは、その番号を打ち込んで、viewで見れます。copyを押すと座標情報がクリップボードにコピーされます。
-- plot を押すとscanしたパラメータ/エネルギーの図が表示されます。1次元なら普通のグラフ、2次元なら3次元のグラフが表示されます。エネルギーは、最低値を0として相対値（kcal/mol）で表示されます。
-- annotationにチェックを入れると、どの点がどの番号かも表示します。上記から番号を指定するときに便利です。
-- annotationにチェックを入れていると、「saddleっぽい」点が赤くなります。1次元scanの場合は単に極大値です。2次元の場合、離散値からscipyを利用したspline fittingをおこない、その近似曲面上の一階/二階の微分からsaddle判定をおこないます（USE_SCIPY=Trueのとき）。勾配に関する判定を緩めにしてありますので、間違ったのも拾いますが、そこは人間が判断しましょう。
-- 2次元scanの場合、annotationをチェックしてgrad. tol.を入れたうえでplotすると、そのgrad. tol.を基準にして鞍点の判定をやり直します（数秒～十数秒かかります）。赤い点が多すぎるor少なすぎるときは適宜基準を変えてください。そのときに判定された鞍点の番号はログに表示されます。csvに出力されている値は計算時のもので、これは更新しません（default値での判定）。
-- 2次元scanの場合、散布図だけでなくsurfaceボタンを押すとPESのような表示もできます。
-- なおgrad. tol.の値は物理的に意味のある単位ではなく、適当なスケールのものです。
-
-
-### 4. その他
-
-- XYZファイルをドラッグアンドドロップするとInputファイルとして読み込まれます。結果をみたいときはCSVファイルをドラッグアンドドロップしてください。同名のXYZファイルも同時に読み込まれます。
-- 結果のCSVファイルには、各scanパラメータについて、[scan] と [real] の値が書いてあります。[scan] は設定条件からの計算値、[real]は実際の構造から計算した値です。厳密に座標やパラメータを固定せずに強いポテンシャルによる束縛で固定をしているため、多少はずれます。
-プロットするときは実際の値[real]が使われています。
+- A dropped xyz file is loaded as the input file. 
+- When a CSV file loaded, the corresponding (sane name) xyz file is loaded as the result file.
+- In the result CSV, `scan` is the parameter value from settings, `real` is from the actual optimized geometry. 
+  Because parameters are just constrained via strong potentials when using xtb, there may be some deviations. `real` values are used when plotting.
