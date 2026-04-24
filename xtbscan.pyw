@@ -20,7 +20,7 @@ from xtbscan import utils, view, xyzutils, convert, xtb, uma
 
 CalcEndEvent, EVT_CALC_END = wx.lib.newevent.NewEvent()
 
-VERSION = '1.3.0'
+VERSION = '1.4.0'
 
 
 class UMACalculationThread(Thread):
