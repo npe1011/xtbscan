@@ -22,7 +22,7 @@ class XTBTerminationError(Exception):
 
 class XTBParams:
     def __init__(self,
-                 method: str = 'gfn2',
+                 method: str = 'gxtb',
                  charge: int = 0,
                  uhf: int = 0,
                  solvation: Optional[str] = None,
@@ -30,11 +30,11 @@ class XTBParams:
         # check parameters
         try:
             method = method.lower()
-            assert method in ['gfn1', 'gfn2', 'gfnff']
+            assert method in ['gfn1', 'gfn2', 'gfnff', 'gxtb']
             assert uhf >= 0
             if solvation is not None:
                 solvation = solvation.lower()
-                assert solvation in ['alpb', 'gbsa']
+                assert solvation in ['alpb', 'gbsa', 'cosmo', 'gbe']
                 assert solvent is not None
                 assert len(solvent) != ''
         except AssertionError as e:
@@ -207,6 +207,7 @@ def _opt(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
             command = [config.XTB_BIN, config.INIT_XYZ_FILE, '--opt']
         command.extend(xtb_params.args)
 
+        print('Starting xtb (opt).')
         with open(config.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
             proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
             while True:
@@ -220,6 +221,7 @@ def _opt(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
             if 'normal termination of xtb' not in f.read():
                 raise RuntimeError('xtb optimization failed in {:}'.format(workdir))
 
+        print('xtb done.')
         shutil.copy(config.XTB_OPT_FILE, result_xyz_file)
         calc_success = True
 
@@ -248,6 +250,7 @@ def _scan1d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
         command = [config.XTB_BIN, config.INIT_XYZ_FILE, '--opt', '--input', config.INPUT_FILE]
         command.extend(xtb_params.args)
 
+        print('Starting xtb (1D scan).')
         with open(config.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
             proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
             while True:
@@ -261,6 +264,7 @@ def _scan1d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
             if 'normal termination of xtb' not in f.read():
                 raise RuntimeError('xtb scan failed in {:}'.format(workdir))
 
+        print('xtb done.')
         atoms, coordinates_list, energy_list = xyzutils.read_xtbscan_file(config.XTB_SCAN_FILE)
         relative_energy_list = (energy_list - np.min(energy_list)) * config.HARTREE_TO_KCAL
         assigned_value_list = scan.get_values()
@@ -331,6 +335,7 @@ def _scan2d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
         constrain2 = XTBConstrain(constrain_type=scan2.scan_type, atom_indices=scan2.atom_indices, value='auto')
         _save_input_file(config.INPUT_FILE, [scan1], constrains + [constrain2], force_constant)
 
+        print('Starting First 1D scan.')
         with open(config.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
             proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
             while True:
@@ -343,6 +348,7 @@ def _scan2d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
         with open(config.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
             if 'normal termination of xtb' not in f.read():
                 raise RuntimeError('xtb scan failed in {:}'.format(workdir))
+        print('First 1D scan done.')
 
         atoms, first_scanned_coordinates_list, _ = xyzutils.read_xtbscan_file(config.XTB_SCAN_FILE)
         os.chdir(workdir)
@@ -351,6 +357,7 @@ def _scan2d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
         coordinates_list_2d = []
         energy_list_2d = []
         constrain1 = XTBConstrain(constrain_type=scan1.scan_type, atom_indices=scan1.atom_indices, value='auto')
+        print(f'Starting second dimension scan ({scan1.num_step} scans in total)')
         for i1 in range(scan1.num_step):
             internal_workdir = workdir / 'scan2_{:}'.format(i1 + 1)
             internal_workdir.mkdir()
@@ -370,7 +377,7 @@ def _scan2d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
             with open(config.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
                 if 'normal termination of xtb' not in f.read():
                     raise RuntimeError('xtb scan failed in {:}'.format(workdir))
-
+            print(f'{i1+1}/{scan1.num_step} scan done.')
             _, coordinates_list, energy_list = xyzutils.read_xtbscan_file(config.XTB_SCAN_FILE)
             coordinates_list_2d.append(coordinates_list)
             energy_list_2d.append(energy_list)
@@ -402,9 +409,10 @@ def _scan2d(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
             num_procs = None
         else:
             num_procs = int(omp_num_threads.split(',')[0])
+        print('Saddle point checking...')
         saddle_check_list = saddle.check_saddle_2d(relative_energy_list, scan1.num_step, scan2.num_step,
                                                    grad_tol=None, num_procs=num_procs)
-
+        print('done.')
         # output csv data
         csv_data = [['2d', str(scan1.num_step), str(scan2.num_step)],
                     ['#',
@@ -460,6 +468,7 @@ def _scan_concerted(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
         command = [config.XTB_BIN, config.INIT_XYZ_FILE, '--opt', '--input', config.INPUT_FILE]
         command.extend(xtb_params.args)
 
+        print('Starting xtb (concerted scan).')
         with open(config.XTB_LOG_FILE, 'w', encoding='utf-8') as f:
             proc = utils.popen_bg(command, universal_newlines=True, encoding='utf-8', stdout=f, stderr=sp.STDOUT)
             while True:
@@ -472,6 +481,7 @@ def _scan_concerted(input_xyz_file: Path, job_name: str, xtb_params: XTBParams,
         with open(config.XTB_LOG_FILE, 'r', encoding='utf-8') as f:
             if 'normal termination of xtb' not in f.read():
                 raise RuntimeError('xtb scan failed in {:}'.format(workdir))
+        print('xtb done')
 
         atoms, coordinates_list, energy_list = xyzutils.read_xtbscan_file(config.XTB_SCAN_FILE)
         relative_energy_list = (energy_list - np.min(energy_list)) * config.HARTREE_TO_KCAL
@@ -527,14 +537,16 @@ def setenv_xtb(num_threads: int = 1, memory_per_thread: Optional[str] = None) ->
         memory_per_thread = memory_per_thread[:-1]
 
     os.environ['XTBPATH'] = str(config.XTB_PARAM_DIR)
-    os.environ['OMP_NUM_THREADS'] = num_threads + ',1'
+    os.environ['OMP_NUM_THREADS'] = num_threads
+    os.environ['OMP_MAX_ACTIVE_LEVELS'] = '1'
     os.environ['OMP_STACKSIZE'] = memory_per_thread
     os.environ['MKL_NUM_THREADS'] = num_threads
 
     current_path = os.environ.get('PATH', '')
     xtb_bin_dir = str(Path(config.XTB_BIN).parent)
+
     if xtb_bin_dir not in current_path.split(os.pathsep):
-        os.environ['PATH'] = current_path + os.pathsep + xtb_bin_dir
+        os.environ['PATH'] = xtb_bin_dir + os.pathsep + current_path
 
     current_path = os.environ.get('PATH', '')
     if config.XTB_OTHER_LIB_DIR is not None:
