@@ -4,6 +4,7 @@
   - [1. Introduction](#1-introduction)
     - [1.1. Overview](#11-overview)
     - [1.2. Update History](#12-update-history)
+      - [2026/4/24](#2026424)
       - [2025/8/14](#2025814)
       - [2024/10/24](#20241024)
       - [2024/10/18](#20241018)
@@ -35,6 +36,11 @@ torch + fairchem-core). It supports 1D and 2D scans, as well as
 multi-parameter concerted scans.
 
 ### 1.2. Update History
+
+
+#### 2026/4/24
+
+- Added: support for g-xtb.
 
 #### 2025/8/14
 
@@ -70,7 +76,7 @@ multi-parameter concerted scans.
 
 - Windows 11
 - Python 3.12.8
-- xtb-6.6.1 for Windows
+- xtb-63.6.1 for Windows
 - wxPython==4.2.2
 - numpy==2.2.1
 - scipy==1.15.0
@@ -80,7 +86,7 @@ multi-parameter concerted scans.
 For uma/omol25,
 - ase==3.26.0
 - torch==2.6.0
-- fairchem-core==2.3.0
+- fairchem-core==2..0
 
 ```
 python -m pip install wxpython cclib matplotlib scipy
